@@ -1,0 +1,7 @@
+data/exports/
+data/logs/
+backend/firefinder.db
+backend/.venv/
+__pycache__/
+*.py[cod]
+.env
