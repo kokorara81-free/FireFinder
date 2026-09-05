@@ -17,7 +17,17 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_payloads(input_path: Path) -> list[tuple[Path, dict]]:
-    paths = [input_path] if input_path.is_file() else sorted(input_path.glob("sepa_screening_all_*.json"))
+    if input_path.is_file():
+        paths = [input_path]
+    else:
+        paths = sorted(input_path.glob("sepa_screening_all_*.json"))
+        if not paths:
+            paths = sorted(
+                path for path in input_path.glob("sepa_screening_*.json")
+                if "_all_" not in path.name
+            )
+            if paths:
+                print("경고: 전체 결과 파일이 없어 구형 후보 리포트로 제한 분석합니다.")
     if not paths:
         raise FileNotFoundError(f"No archived screening files found in {input_path}")
     return [(path, json.loads(path.read_text(encoding="utf-8"))) for path in paths]

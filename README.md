@@ -69,7 +69,7 @@ python .\run_live_screening.py --universe --min-price 10 --min-market-cap 300000
 
 ## GitHub Actions 클라우드 배치
 
-GitHub Actions 워크플로는 매일 한국 시간 오전 6시와 오후 8시에 나스닥 유니버스 스크리닝을 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `21:00 UTC`(오전 6시 KST)와 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관하며, CSV는 Gmail로 첨부 발송합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 주간·월간·분기별 성과를 계산한 뒤 `performance-analysis/` 경로에 저장합니다.
+GitHub Actions 워크플로는 매일 한국 시간 오전 6시와 오후 8시에 나스닥 유니버스 스크리닝을 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `21:00 UTC`(오전 6시 KST)와 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관하며, CSV는 Gmail로 첨부 발송합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 주간·월간·분기별 성과를 계산한 뒤 `performance-analysis/` 경로에 저장합니다. 과거에 생성된 `sepa_screening_*.json`만 있는 경우에는 구형 후보 리포트를 사용해 제한 분석하고 경고를 출력합니다. 이후 스크리닝 실행부터는 `sepa_screening_all_*.json`이 생성되어 전체 결과가 분석됩니다.
 
 GitHub 저장소의 Settings > Secrets and variables > Actions에 다음 값을 등록합니다.
 
