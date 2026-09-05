@@ -12,7 +12,10 @@ def required_environment(name: str) -> str:
 
 
 def latest_csv(export_directory: Path) -> Path:
-    csv_files = list(export_directory.glob("sepa_screening_*.csv"))
+    csv_files = [
+        path for path in export_directory.glob("sepa_screening_*.csv")
+        if "_all_" not in path.name
+    ]
     if not csv_files:
         raise RuntimeError(f"No screening CSV found in {export_directory}")
     return max(csv_files, key=lambda file_path: file_path.stat().st_mtime)

@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
 def write_outputs(results: list[dict], output_dir: Path) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_json_path = output_dir / f"sepa_screening_all_{timestamp}.json"
+    archive_csv_path = output_dir / f"sepa_screening_all_{timestamp}.csv"
     json_path = output_dir / f"sepa_screening_{timestamp}.json"
     csv_path = output_dir / f"sepa_screening_{timestamp}.csv"
     vcp_results = [
@@ -43,35 +45,44 @@ def write_outputs(results: list[dict], output_dir: Path) -> tuple[Path, Path]:
         and result.get("vcp", {}).get("volume_dry_up") is True
     ]
 
-    payload = {
+    archive_payload = {
         "provider": "YahooFinanceProvider",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "strategy": "SEPA Trend Template",
         "strategy_version": SepaStrategy.version,
-        "results": vcp_results,
+        "result_count": len(results),
+        "candidate_count": len(vcp_results),
+        "results": results,
     }
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    archive_json_path.write_text(json.dumps(archive_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+    candidate_payload = {**archive_payload, "results": vcp_results}
+    json_path.write_text(json.dumps(candidate_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
     condition_keys = list(SepaStrategy.condition_labels)
     fieldnames = ["symbol", "score", "max_score", "passed", "current_price", "volume_ratio", "rs_score", "vcp_found", "vcp_contraction_count", "vcp_volume_dry_up", "vcp_breakout_volume_ratio", "vcp_breakout_volume_confirmed", "vcp_pivot_breakout", "vcp_pivot_price", "vcp_pivot_date", *condition_keys, "error"]
-    with csv_path.open("w", newline="", encoding="utf-8-sig") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        for result in vcp_results:
-            row = {key: result.get(key, "") for key in fieldnames}
-            vcp = result.get("vcp", {})
-            row.update({
-                "vcp_found": "발견" if vcp.get("found") else "미발견",
-                "vcp_contraction_count": vcp.get("contraction_count", ""),
-                "vcp_volume_dry_up": "통과" if vcp.get("volume_dry_up") else "미달",
-                "vcp_breakout_volume_ratio": vcp.get("breakout_volume_ratio", ""),
-                "vcp_breakout_volume_confirmed": "통과" if vcp.get("breakout_volume_confirmed") else "미달",
-                "vcp_pivot_breakout": "돌파" if vcp.get("pivot_breakout") else "미돌파",
-                "vcp_pivot_price": vcp.get("pivot_price", ""),
-                "vcp_pivot_date": vcp.get("pivot_date", ""),
-            })
-            row.update({key: "통과" if result.get("conditions", {}).get(key) else "미달" for key in condition_keys})
-            writer.writerow(row)
+    def write_csv(path: Path, rows: list[dict]) -> None:
+        with path.open("w", newline="", encoding="utf-8-sig") as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            for result in rows:
+                row = {key: result.get(key, "") for key in fieldnames}
+                vcp = result.get("vcp", {})
+                row.update({
+                    "vcp_found": "발견" if vcp.get("found") else "미발견",
+                    "vcp_contraction_count": vcp.get("contraction_count", ""),
+                    "vcp_volume_dry_up": "통과" if vcp.get("volume_dry_up") else "미달",
+                    "vcp_breakout_volume_ratio": vcp.get("breakout_volume_ratio", ""),
+                    "vcp_breakout_volume_confirmed": "통과" if vcp.get("breakout_volume_confirmed") else "미달",
+                    "vcp_pivot_breakout": "돌파" if vcp.get("pivot_breakout") else "미돌파",
+                    "vcp_pivot_price": vcp.get("pivot_price", ""),
+                    "vcp_pivot_date": vcp.get("pivot_date", ""),
+                })
+                row.update({key: "통과" if result.get("conditions", {}).get(key) else "미달" for key in condition_keys})
+                writer.writerow(row)
+
+    write_csv(archive_csv_path, results)
+    write_csv(csv_path, vcp_results)
     return json_path, csv_path
 
 

@@ -1,0 +1,65 @@
+name: SEPA Performance Analysis
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: backend
+      GCS_BUCKET: ${{ vars.GCS_BUCKET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download archived screening results
+        run: |
+          test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty." && exit 1)
+          mkdir -p data/archived-screening
+          gcloud storage cp --recursive "gs://${GCS_BUCKET}/sepa-screening" data/archived-screening
+          find data/archived-screening -type f -name 'sepa_screening_all_*.json' \
+            -exec cp {} data/archived-screening/ \;
+          ARCHIVE_COUNT="$(find data/archived-screening -maxdepth 1 -type f -name 'sepa_screening_all_*.json' | wc -l)"
+          echo "Archived screening files found: ${ARCHIVE_COUNT}"
+          test "${ARCHIVE_COUNT}" -gt 0 || (echo "No archived screening JSON files found." && exit 1)
+
+      - name: Analyze archived screening performance
+        run: |
+          python backend/run_performance_analysis.py data/archived-screening \
+            --output-dir data/performance-analysis
+
+      - name: Upload performance analysis to Cloud Storage
+        run: |
+          ANALYSIS_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          ANALYSIS_COUNT="$(find data/performance-analysis -maxdepth 1 -type f -name 'performance_*.json' | wc -l)"
+          echo "Performance analysis files generated: ${ANALYSIS_COUNT}"
+          test "${ANALYSIS_COUNT}" -gt 0 || (echo "No performance analysis files generated." && exit 1)
+          gcloud storage cp data/performance-analysis/performance_*.json \
+            "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"
+          gcloud storage ls "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"

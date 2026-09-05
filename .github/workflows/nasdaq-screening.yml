@@ -48,8 +48,12 @@ jobs:
 
       - name: Upload reports to Cloud Storage
         run: |
+          test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty. Set it in Settings > Secrets and variables > Actions > Variables." && exit 1)
+          echo "Using GCS bucket: ${GCS_BUCKET}"
           RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "RUN_TIMESTAMP=${RUN_TIMESTAMP}" >> "${GITHUB_ENV}"
           gcloud storage cp data/exports/sepa_screening_* "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
+          gcloud storage ls "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
 
       - name: Email CSV report
         run: python backend/send_screening_email.py
