@@ -71,6 +71,8 @@ python .\run_live_screening.py --universe --min-price 10 --min-market-cap 300000
 
 GitHub Actions 워크플로는 매일 한국 시간 오후 8시에 나스닥 유니버스 스크리닝을 한 번 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 주간·월간·분기별 성과를 계산한 뒤 `performance-analysis/` 경로에 저장하고 분석 CSV를 Gmail로 첨부 발송합니다. 과거에 생성된 `sepa_screening_*.json`만 있는 경우에는 구형 후보 리포트를 사용해 제한 분석하고 경고를 출력합니다. 이후 스크리닝 실행부터는 `sepa_screening_all_*.json`이 생성되어 전체 결과가 분석됩니다.
 
+성과 분석 워크플로는 GCS의 전체 스크리닝 아카이브를 매번 다시 받지 않습니다. 가장 최근 `sepa_screening_all_*.json` 하나와 `performance-analysis/latest/listing_history.json`을 내려받아 누적 이력을 갱신합니다. 갱신된 `listing_history.json`과 `listing_history.csv`는 날짜별 분석 폴더와 `performance-analysis/latest/`에 함께 저장됩니다. 이력 JSON에는 티커별 최초 발견일·최초 통과일·최근 통과일·날짜별 SEPA 관측값과 최신 VCP 상태가 포함되며, CSV에는 최신 VCP의 피벗·돌파·수축·거래량 값과 `last_listed_date` 종가 대비 분석 시점 최신 종가 수익률이 표시됩니다. CSV의 첫 번째 행은 컬럼 설명, 두 번째 행은 컬럼명, 세 번째 행부터 티커 데이터입니다. 최초 실행 시 누적 history가 없으면 새 이력으로 시작합니다. 따라서 과거 날짜를 복원하려면 해당 날짜의 원본 전체 스크리닝 파일이 별도로 필요합니다.
+
 GitHub 저장소의 Settings > Secrets and variables > Actions에 다음 값을 등록합니다.
 
 - Variable `GCS_BUCKET`: 결과를 저장할 Cloud Storage 버킷 이름

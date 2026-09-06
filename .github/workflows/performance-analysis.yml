@@ -41,27 +41,26 @@ jobs:
       - name: Set up Google Cloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Download archived screening results
+      - name: Download latest screening result and history
         run: |
           test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty." && exit 1)
-          mkdir -p data/archived-screening
-          gcloud storage cp --recursive "gs://${GCS_BUCKET}/sepa-screening" data/archived-screening
-          find data/archived-screening -type f -name 'sepa_screening_all_*.json' \
-            -exec cp {} data/archived-screening/ \;
-          ARCHIVE_COUNT="$(find data/archived-screening -maxdepth 1 -type f -name 'sepa_screening_all_*.json' | wc -l)"
-          if [ "${ARCHIVE_COUNT}" -eq 0 ]; then
-            find data/archived-screening -type f -name 'sepa_screening_*.json' ! -name 'sepa_screening_all_*.json' \
-              -exec cp {} data/archived-screening/ \;
-            LEGACY_COUNT="$(find data/archived-screening -maxdepth 1 -type f -name 'sepa_screening_*.json' ! -name 'sepa_screening_all_*.json' | wc -l)"
-            echo "No full screening files found; using ${LEGACY_COUNT} legacy candidate files."
-            ARCHIVE_COUNT="${LEGACY_COUNT}"
+          mkdir -p data/current-screening data/previous-history
+          SCREENING_URI="$(gcloud storage ls --recursive "gs://${GCS_BUCKET}/sepa-screening/**" \
+            | grep -E '/sepa_screening_all_[^/]+\.json$' | sort | tail -n 1)"
+          test -n "${SCREENING_URI}" || (echo "No full screening JSON found." && exit 1)
+          gcloud storage cp "${SCREENING_URI}" data/current-screening/sepa_screening_all_latest.json
+          if ! gcloud storage cp "gs://${GCS_BUCKET}/performance-analysis/latest/listing_history.json" \
+            data/previous-history/listing_history.json; then
+            echo '{"symbols": []}' > data/previous-history/listing_history.json
+            echo "No previous listing history found; starting a new history."
           fi
-          echo "Archived screening files found: ${ARCHIVE_COUNT}"
-          test "${ARCHIVE_COUNT}" -gt 0 || (echo "No archived screening JSON files found." && exit 1)
+          echo "Latest screening: ${SCREENING_URI}"
 
       - name: Analyze archived screening performance
         run: |
-          python backend/run_performance_analysis.py data/archived-screening \
+          python backend/run_performance_analysis.py \
+            --screening-file data/current-screening/sepa_screening_all_latest.json \
+            --history-file data/previous-history/listing_history.json \
             --output-dir data/performance-analysis
 
       - name: Verify analysis email input
@@ -83,4 +82,6 @@ jobs:
           test "${ANALYSIS_COUNT}" -gt 0 || (echo "No performance analysis files generated." && exit 1)
           gcloud storage cp data/performance-analysis/performance_*.json data/performance-analysis/listing_history.json data/performance-analysis/listing_history.csv \
             "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"
+          gcloud storage cp data/performance-analysis/listing_history.json data/performance-analysis/listing_history.csv \
+            "gs://${GCS_BUCKET}/performance-analysis/latest/"
           gcloud storage ls "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"

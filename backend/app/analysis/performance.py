@@ -22,11 +22,52 @@ def analyze_listing_history(payloads: list[tuple[object, dict]]) -> list[dict]:
                 "score": result.get("score"),
                 "passed": bool(result.get("passed", False)),
                 "error": result.get("error"),
+                "volume_ratio": result.get("volume_ratio"),
+                "rs_score": result.get("rs_score"),
+                "vcp": result.get("vcp"),
             }
 
+    return _build_listing_histories(observations_by_symbol)
+
+
+def merge_listing_history(previous: dict, payload: dict) -> dict:
+    observations_by_symbol = defaultdict(dict)
+    for symbol_history in previous.get("symbols", []):
+        symbol = symbol_history.get("symbol")
+        if not symbol:
+            continue
+        for observation in symbol_history.get("observations", []):
+            date = observation.get("date")
+            if date:
+                observations_by_symbol[symbol][date] = dict(observation)
+
+    screening_date = parse_generated_date(payload["generated_at"]).isoformat()
+    for result in payload.get("results", []):
+        symbol = result.get("symbol")
+        if not symbol:
+            continue
+        observations_by_symbol[symbol][screening_date] = {
+            "date": screening_date,
+            "score": result.get("score"),
+            "passed": bool(result.get("passed", False)),
+            "error": result.get("error"),
+            "volume_ratio": result.get("volume_ratio"),
+            "rs_score": result.get("rs_score"),
+            "vcp": result.get("vcp"),
+        }
+
+    return {
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "source": "incremental screening history",
+        "listing_definition": "result.passed == true",
+        "symbols": _build_listing_histories(observations_by_symbol),
+    }
+
+
+def _build_listing_histories(observations_by_symbol: dict[str, dict[str, dict]]) -> list[dict]:
     histories = []
-    for symbol, observations_by_date in sorted(observations_by_symbol.items()):
-        observations = [observations_by_date[screening_date] for screening_date in sorted(observations_by_date)]
+    for symbol, symbol_observations in sorted(observations_by_symbol.items()):
+        observations = [symbol_observations[screening_date] for screening_date in sorted(symbol_observations)]
         listed_dates = [observation["date"] for observation in observations if observation["passed"]]
         streaks = []
         current_streak = 0
@@ -65,6 +106,7 @@ def analyze_listing_history(payloads: list[tuple[object, dict]]) -> list[dict]:
         )
         histories.append({
             "symbol": symbol,
+            "first_seen_date": observations[0]["date"] if observations else None,
             "first_listed_date": listed_dates[0] if listed_dates else None,
             "last_listed_date": listed_dates[-1] if listed_dates else None,
             "listed_count": len(listed_dates),
@@ -73,6 +115,7 @@ def analyze_listing_history(payloads: list[tuple[object, dict]]) -> list[dict]:
             "reentries": reentries,
             "dropouts": dropouts,
             "score_changes": score_changes,
+            "latest_vcp": observations[-1].get("vcp") if observations else None,
             "observations": observations,
         })
     return histories
