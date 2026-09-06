@@ -69,7 +69,7 @@ python .\run_live_screening.py --universe --min-price 10 --min-market-cap 300000
 
 ## GitHub Actions 클라우드 배치
 
-GitHub Actions 워크플로는 매일 한국 시간 오전 6시와 오후 8시에 나스닥 유니버스 스크리닝을 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `21:00 UTC`(오전 6시 KST)와 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관하며, CSV는 Gmail로 첨부 발송합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 주간·월간·분기별 성과를 계산한 뒤 `performance-analysis/` 경로에 저장합니다. 과거에 생성된 `sepa_screening_*.json`만 있는 경우에는 구형 후보 리포트를 사용해 제한 분석하고 경고를 출력합니다. 이후 스크리닝 실행부터는 `sepa_screening_all_*.json`이 생성되어 전체 결과가 분석됩니다.
+GitHub Actions 워크플로는 매일 한국 시간 오후 8시에 나스닥 유니버스 스크리닝을 한 번 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 주간·월간·분기별 성과를 계산한 뒤 `performance-analysis/` 경로에 저장하고 분석 CSV를 Gmail로 첨부 발송합니다. 과거에 생성된 `sepa_screening_*.json`만 있는 경우에는 구형 후보 리포트를 사용해 제한 분석하고 경고를 출력합니다. 이후 스크리닝 실행부터는 `sepa_screening_all_*.json`이 생성되어 전체 결과가 분석됩니다.
 
 GitHub 저장소의 Settings > Secrets and variables > Actions에 다음 값을 등록합니다.
 
@@ -109,7 +109,7 @@ python .\run_live_screening.py AAPL NVDA LLY NOW
 
 기본값은 모의 데이터를 사용합니다. 실제 Yahoo Finance 데이터를 사용하려면 `.env` 또는 환경 변수에서 `DATA_PROVIDER=yahoo`로 설정합니다. Yahoo Finance 공급자를 사용할 때는 `pip install -r requirements.txt`로 `yfinance`를 설치해야 합니다. SEPA는 기본적으로 9개 조건 중 7개 이상이면 통과하며, `SEPA_MIN_SCORE`로 변경할 수 있습니다. RS 점수는 SPY 대비 최근 1개월·3개월·6개월 상대수익률을 각각 50%·30%·20%로 가중하여 계산합니다. SEPA 통과 종목에만 최근 20주를 대상으로 VCP를 분석하며, 3회 이상 수축폭이 점진적으로 작고 각 수축 기간이 5거래일 이상일 때 VCP로 판정합니다. VCP 결과에는 수축별 평균 거래량 감소, 50일 평균 대비 돌파 거래량, 피벗 돌파 여부와 피벗 가격이 포함됩니다.
 
-보관된 전체 결과 하나의 성과를 분석하려면 다음처럼 실행합니다. 여러 보관 결과가 있는 디렉터리를 입력하면 파일을 일괄 분석할 수도 있습니다. `weekly`, `monthly`, `quarterly`는 각각 5·21·63 거래일 뒤의 수익률이며, 아직 해당 기간이 지나지 않은 결과는 `pending`으로 표시됩니다.
+보관된 전체 결과 하나의 성과를 분석하려면 다음처럼 실행합니다. 여러 보관 결과가 있는 디렉터리를 입력하면 파일을 일괄 분석할 수도 있습니다. `weekly`, `monthly`, `quarterly`는 각각 5·21·63 거래일 뒤의 수익률이며, 아직 해당 기간이 지나지 않은 결과는 `pending`으로 표시됩니다. 디렉터리 분석 시 `listing_history.json`과 `listing_history.csv`가 함께 생성되며, 티커별 리스트업 연속일·최장 연속일·이탈일·재진입 횟수·점수 변화·날짜별 관측값을 포함합니다. 리스트업은 `result.passed == true`인 경우로 정의합니다. Analysis 워크플로는 `listing_history.csv`만 메일 첨부로 발송합니다.
 
 ```powershell
 cd backend

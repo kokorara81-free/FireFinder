@@ -2,7 +2,6 @@ name: Nasdaq SEPA Screening
 
 on:
   schedule:
-    - cron: "0 21 * * *"
     - cron: "0 11 * * *"
   workflow_dispatch:
 
@@ -18,9 +17,6 @@ jobs:
       DATA_PROVIDER: yahoo
       PYTHONPATH: backend
       GCS_BUCKET: ${{ vars.GCS_BUCKET }}
-      GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
-      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-      REPORT_RECIPIENT: ${{ secrets.REPORT_RECIPIENT }}
 
     steps:
       - name: Check out repository
@@ -54,6 +50,5 @@ jobs:
           echo "RUN_TIMESTAMP=${RUN_TIMESTAMP}" >> "${GITHUB_ENV}"
           gcloud storage cp data/exports/sepa_screening_* "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
           gcloud storage ls "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
+# Screening output is retained in Cloud Storage for later analysis.
 
-      - name: Email CSV report
-        run: python backend/send_screening_email.py

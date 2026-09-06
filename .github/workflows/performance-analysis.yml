@@ -16,6 +16,9 @@ jobs:
     env:
       PYTHONPATH: backend
       GCS_BUCKET: ${{ vars.GCS_BUCKET }}
+      GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      REPORT_RECIPIENT: ${{ secrets.REPORT_RECIPIENT }}
 
     steps:
       - name: Check out repository
@@ -61,12 +64,23 @@ jobs:
           python backend/run_performance_analysis.py data/archived-screening \
             --output-dir data/performance-analysis
 
+      - name: Verify analysis email input
+        run: |
+          test -s data/performance-analysis/listing_history.csv
+          echo "Analysis CSV ready: $(wc -c < data/performance-analysis/listing_history.csv) bytes"
+          test -n "${GMAIL_USERNAME}" || (echo "GMAIL_USERNAME is empty." && exit 1)
+          test -n "${GMAIL_APP_PASSWORD}" || (echo "GMAIL_APP_PASSWORD is empty." && exit 1)
+          test -n "${REPORT_RECIPIENT}" || (echo "REPORT_RECIPIENT is empty." && exit 1)
+
+      - name: Email analysis CSV report
+        run: python -u backend/send_analysis_email.py
+
       - name: Upload performance analysis to Cloud Storage
         run: |
           ANALYSIS_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
           ANALYSIS_COUNT="$(find data/performance-analysis -maxdepth 1 -type f -name 'performance_*.json' | wc -l)"
           echo "Performance analysis files generated: ${ANALYSIS_COUNT}"
           test "${ANALYSIS_COUNT}" -gt 0 || (echo "No performance analysis files generated." && exit 1)
-          gcloud storage cp data/performance-analysis/performance_*.json \
+          gcloud storage cp data/performance-analysis/performance_*.json data/performance-analysis/listing_history.json data/performance-analysis/listing_history.csv \
             "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"
           gcloud storage ls "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"
