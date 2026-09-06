@@ -49,8 +49,10 @@ jobs:
             | grep -E '/sepa_screening_all_[^/]+\.json$' | sort | tail -n 1)"
           test -n "${SCREENING_URI}" || (echo "No full screening JSON found." && exit 1)
           gcloud storage cp "${SCREENING_URI}" data/current-screening/sepa_screening_all_latest.json
-          if ! gcloud storage cp "gs://${GCS_BUCKET}/performance-analysis/latest/listing_history.json" \
-            data/previous-history/listing_history.json; then
+          if gcloud storage ls "gs://${GCS_BUCKET}/performance-analysis/latest/listing_history.json" >/dev/null 2>&1; then
+            gcloud storage cp "gs://${GCS_BUCKET}/performance-analysis/latest/listing_history.json" \
+              data/previous-history/listing_history.json
+          else
             echo '{"symbols": []}' > data/previous-history/listing_history.json
             echo "No previous listing history found; starting a new history."
           fi
