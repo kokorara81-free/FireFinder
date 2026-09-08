@@ -40,7 +40,7 @@ def screening_dashboard():
 			<div id="status" class="status">데이터를 불러오는 중...</div>
 			<div class="table-wrap">
 				<table id="results"><thead><tr>
-					<th>종목</th><th>점수</th><th>판정</th><th>현재가</th><th>RS 점수</th>
+					<th>집계일</th><th>종목</th><th>섹터</th><th>산업군</th><th>점수</th><th>판정</th><th>현재가</th><th>RS 점수</th>
 					<th>150일선 위</th><th>200일선 위</th><th>50일선 > 150일선</th>
 					<th>150일선 > 200일선</th><th>200일선 상승</th><th>52주 고가 근접</th>
 					<th>52주 저가 대비 상승</th><th>거래량 지지</th>
@@ -62,7 +62,7 @@ def screening_dashboard():
 					body.innerHTML = payload.results.map(result => {
 						const status = value => value ? '<span class="pass">통과</span>' : '<span class="fail">미달</span>';
 						const conditions = result.conditions || {};
-						return '<tr><td>' + result.symbol + '</td><td>' + result.score + '/' + result.max_score +
+						return '<tr><td>' + payload.screening_date + '</td><td>' + result.symbol + '</td><td>' + (result.sector || '-') + '</td><td>' + (result.industry || '-') + '</td><td>' + result.score + '/' + result.max_score +
 							'</td><td class="' + (result.passed ? 'pass' : 'fail') + '">' + (result.passed ? '통과' : '미달') +
 							'</td><td>' + (result.current_price ? '$' + result.current_price.toFixed(2) : '-') + '</td><td>' +
 							(result.rs_score !== undefined ? result.rs_score.toFixed(2) : '-') + '</td>' +

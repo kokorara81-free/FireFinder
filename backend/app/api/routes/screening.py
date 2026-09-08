@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Query
 
 from app.data.collectors.price_collector import PriceCollector
@@ -17,10 +20,12 @@ def preview_screening(
     symbols: list[str] = Query(default=["AAPL", "MSFT", "NVDA", "AMZN"]),
 ):
     service = create_screening_service()
+    screening_date = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
     return {
         "strategy": service.strategy.name,
         "strategy_version": service.strategy.version,
         "provider": service.provider.__class__.__name__,
+        "screening_date": screening_date,
         "results": service.screen(symbols),
     }
 
