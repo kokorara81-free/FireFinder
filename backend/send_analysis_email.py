@@ -1,6 +1,8 @@
 import os
 import smtplib
+from collections import Counter
 from email.message import EmailMessage
+import json
 from pathlib import Path
 
 
@@ -18,6 +20,55 @@ def analysis_csv(analysis_directory: Path) -> Path:
     return report_path
 
 
+def listing_summary(analysis_directory: Path) -> str:
+    history_path = analysis_directory / "listing_history.json"
+    if not history_path.is_file():
+        return "SEPA 통과 종목 요약을 계산할 History JSON이 없습니다."
+
+    history = json.loads(history_path.read_text(encoding="utf-8"))
+    latest_date = max(
+        (
+            observation.get("date")
+            for symbol_history in history.get("symbols", [])
+            for observation in symbol_history.get("observations", [])
+            if observation.get("date")
+        ),
+        default=None,
+    )
+    if not latest_date:
+        return "SEPA 통과 종목 요약: 데이터 없음"
+
+    latest_passed = []
+    for symbol_history in history.get("symbols", []):
+        observation = next(
+            (
+                item for item in symbol_history.get("observations", [])
+                if item.get("date") == latest_date
+            ),
+            None,
+        )
+        if observation and observation.get("passed") is True:
+            latest_passed.append(observation)
+
+    sector_counts = Counter(observation.get("sector") or "미분류" for observation in latest_passed)
+    industry_counts = Counter(observation.get("industry") or "미분류" for observation in latest_passed)
+
+    def format_counts(counts: Counter[str]) -> str:
+        if not counts:
+            return "없음"
+        return ", ".join(
+            f"{name}: {count}개"
+            for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        )
+
+    return "\n".join([
+        f"최신 스크리닝 날짜: {latest_date}",
+        f"SEPA 통과 종목: {len(latest_passed)}개",
+        f"섹터별 통과 수: {format_counts(sector_counts)}",
+        f"산업군별 통과 수: {format_counts(industry_counts)}",
+    ])
+
+
 def main() -> None:
     sender = required_environment("GMAIL_USERNAME")
     app_password = "".join(required_environment("GMAIL_APP_PASSWORD").split())
@@ -28,13 +79,18 @@ def main() -> None:
     ]
     if not recipients:
         raise RuntimeError("REPORT_RECIPIENT must contain at least one email address")
-    report_path = analysis_csv(Path(os.getenv("ANALYSIS_EXPORT_DIR", "data/performance-analysis")))
+    analysis_directory = Path(os.getenv("ANALYSIS_EXPORT_DIR", "data/performance-analysis"))
+    report_path = analysis_csv(analysis_directory)
 
     message = EmailMessage()
     message["Subject"] = "FireFinder screening analysis report"
     message["From"] = sender
     message["To"] = ", ".join(recipients)
-    message.set_content("Attached is the latest FireFinder screening analysis CSV report.")
+    message.set_content(
+        "FireFinder 스크리닝 분석 리포트입니다.\n\n"
+        f"{listing_summary(analysis_directory)}\n\n"
+        "상세 History는 첨부된 CSV 파일을 확인해 주세요."
+    )
     message.add_attachment(
         report_path.read_bytes(),
         maintype="text",
