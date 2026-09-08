@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.data.providers.yahoo_provider import YahooFinanceProvider
 from app.data.providers.universe_provider import NasdaqUniverseProvider
+from app.db.repository import persist_screening_results
 from app.screening.screening_service import ScreeningService
 from app.strategy.sepa_strategy import SepaStrategy
 
@@ -147,6 +148,14 @@ def main() -> int:
     results = service.screen(symbols)
     print_results(results)
     json_path, csv_path = write_outputs(results, Path(args.output_dir))
+    persist_screening_results(
+        results,
+        datetime.now(timezone.utc),
+        service.provider.__class__.__name__,
+        SepaStrategy.name,
+        SepaStrategy.version,
+        trigger_type="manual" if not args.universe else "scheduled",
+    )
     print(f"\nJSON 저장: {json_path.resolve()}")
     print(f"CSV 저장:  {csv_path.resolve()}")
     return 0 if results else 1

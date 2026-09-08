@@ -1,6 +1,7 @@
 data/exports/
 data/logs/
 backend/firefinder.db
+data/firefinder.db
 backend/.venv/
 __pycache__/
 *.py[cod]

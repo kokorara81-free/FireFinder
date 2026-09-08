@@ -3,8 +3,10 @@ from datetime import date, datetime
 
 
 PERIOD_SESSIONS = {
-    "weekly": 5,
+    "two_weeks": 10,
     "monthly": 21,
+    "six_weeks": 30,
+    "two_months": 42,
     "quarterly": 63,
 }
 

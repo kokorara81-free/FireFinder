@@ -13,6 +13,10 @@ engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
+def initialize_database() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
 def get_db():
     database = SessionLocal()
     try:

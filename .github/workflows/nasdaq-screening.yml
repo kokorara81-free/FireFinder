@@ -16,6 +16,7 @@ jobs:
     env:
       DATA_PROVIDER: yahoo
       PYTHONPATH: backend
+      DATABASE_URL: sqlite:///./data/firefinder.db
       GCS_BUCKET: ${{ vars.GCS_BUCKET }}
 
     steps:
@@ -38,10 +39,6 @@ jobs:
           echo "NYSE market status: ${MARKET_STATUS}"
           echo "open=$([[ "${MARKET_STATUS}" == "open" ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
 
-      - name: Run Nasdaq screening
-        if: steps.market_day.outputs.open == 'true'
-        run: python backend/run_live_screening.py --universe --output-dir data/exports
-
       - name: Authenticate to Google Cloud
         if: steps.market_day.outputs.open == 'true'
         uses: google-github-actions/auth@v2
@@ -53,6 +50,21 @@ jobs:
         if: steps.market_day.outputs.open == 'true'
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Restore SQLite database
+        if: steps.market_day.outputs.open == 'true'
+        run: |
+          mkdir -p data
+          if gcloud storage ls "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" >/dev/null 2>&1; then
+            gcloud storage cp "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" data/firefinder.db
+            echo "Restored SQLite database from GCS."
+          else
+            echo "No SQLite database found; starting a new database."
+          fi
+
+      - name: Run Nasdaq screening
+        if: steps.market_day.outputs.open == 'true'
+        run: python backend/run_live_screening.py --universe --output-dir data/exports
+
       - name: Upload reports to Cloud Storage
         if: steps.market_day.outputs.open == 'true'
         run: |
@@ -61,6 +73,8 @@ jobs:
           RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
           echo "RUN_TIMESTAMP=${RUN_TIMESTAMP}" >> "${GITHUB_ENV}"
           gcloud storage cp data/exports/sepa_screening_* "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
+          gcloud storage cp data/firefinder.db "gs://${GCS_BUCKET}/firefinder-db/${RUN_TIMESTAMP}/firefinder.db"
+          gcloud storage cp data/firefinder.db "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db"
           gcloud storage ls "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
 # Screening output is retained in Cloud Storage for later analysis.
 

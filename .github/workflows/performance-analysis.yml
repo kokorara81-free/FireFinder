@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHONPATH: backend
+      DATABASE_URL: sqlite:///./data/firefinder.db
       GCS_BUCKET: ${{ vars.GCS_BUCKET }}
       GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -56,6 +57,12 @@ jobs:
         run: |
           test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty." && exit 1)
           mkdir -p data/current-screening data/previous-history
+          if gcloud storage ls "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" >/dev/null 2>&1; then
+            gcloud storage cp "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" data/firefinder.db
+            echo "Restored SQLite database from GCS."
+          else
+            echo "No SQLite database found; starting a new database."
+          fi
           SCREENING_URI="$(gcloud storage ls --recursive "gs://${GCS_BUCKET}/sepa-screening/**" \
             | grep -E '/sepa_screening_all_[^/]+\.json$' | sort | tail -n 1)"
           test -n "${SCREENING_URI}" || (echo "No full screening JSON found." && exit 1)
@@ -101,4 +108,6 @@ jobs:
             "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"
           gcloud storage cp data/performance-analysis/listing_history.json data/performance-analysis/listing_history.csv \
             "gs://${GCS_BUCKET}/performance-analysis/latest/"
+          gcloud storage cp data/firefinder.db "gs://${GCS_BUCKET}/firefinder-db/${ANALYSIS_TIMESTAMP}/firefinder.db"
+          gcloud storage cp data/firefinder.db "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db"
           gcloud storage ls "gs://${GCS_BUCKET}/performance-analysis/${ANALYSIS_TIMESTAMP}/"

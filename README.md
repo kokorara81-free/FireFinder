@@ -15,6 +15,7 @@
 - 9개 SEPA 조건별 통과/미달 결과
 - SEPA 통과 종목에 대한 VCP 분석 및 피벗 가격
 - 장 시작·마감 리포트 시간 설정의 기본값
+- SQLite 기반 스크리닝·일봉·미래 수익률 저장
 
 ## 실행
 
@@ -69,7 +70,7 @@ python .\run_live_screening.py --universe --min-price 10 --min-market-cap 300000
 
 ## GitHub Actions 클라우드 배치
 
-GitHub Actions 워크플로는 매일 한국 시간 오후 8시에 나스닥 유니버스 스크리닝을 한 번 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 주간·월간·분기별 성과를 계산한 뒤 `performance-analysis/` 경로에 저장하고 분석 CSV를 Gmail로 첨부 발송합니다. 과거에 생성된 `sepa_screening_*.json`만 있는 경우에는 구형 후보 리포트를 사용해 제한 분석하고 경고를 출력합니다. 이후 스크리닝 실행부터는 `sepa_screening_all_*.json`이 생성되어 전체 결과가 분석됩니다.
+GitHub Actions 워크플로는 매일 한국 시간 오후 8시에 나스닥 유니버스 스크리닝을 한 번 실행합니다. GitHub Actions의 cron은 UTC 기준이므로 `11:00 UTC`(오후 8시 KST)로 설정되어 있습니다. 실행 결과는 Git에 커밋하지 않고 Google Cloud Storage에 보관합니다. 성과 분석은 별도의 `SEPA Performance Analysis` 워크플로가 매일 실행하며, GCS의 과거 전체 스크리닝 결과를 내려받아 2주·1개월·1.5개월·2개월·3개월 거래일 기준 성과를 계산한 뒤 `performance-analysis/` 경로에 저장하고 분석 CSV를 Gmail로 첨부 발송합니다. SQLite 분석 DB도 각 작업 시작 시 GCS에서 복원하고 작업 후 `firefinder-db/`에 갱신합니다. 과거에 생성된 `sepa_screening_*.json`만 있는 경우에는 구형 후보 리포트를 사용해 제한 분석하고 경고를 출력합니다. 이후 스크리닝 실행부터는 `sepa_screening_all_*.json`이 생성되어 전체 결과가 분석됩니다.
 
 성과 분석 워크플로는 GCS의 전체 스크리닝 아카이브를 매번 다시 받지 않습니다. 가장 최근 `sepa_screening_all_*.json` 하나와 `performance-analysis/latest/listing_history.json`을 내려받아 누적 이력을 갱신합니다. 갱신된 `listing_history.json`과 `listing_history.csv`는 날짜별 분석 폴더와 `performance-analysis/latest/`에 함께 저장됩니다. 스크리닝 JSON에는 집계 기준일(`screening_date`)과 각 결과의 집계 기준일·섹터·산업군이 포함되고, CSV에도 같은 컬럼이 추가됩니다. 이력 JSON과 CSV에도 티커별 섹터·산업군, 최초 발견일·최초 통과일·최근 통과일·날짜별 SEPA 관측값과 최신 VCP 상태가 포함됩니다. CSV에는 최신 VCP의 피벗·돌파·수축·거래량 값과 `last_listed_date` 종가 대비 분석 시점 최신 종가 수익률이 표시됩니다. CSV의 첫 번째 행은 컬럼 설명, 두 번째 행은 컬럼명, 세 번째 행부터 티커 데이터입니다. 최초 실행 시 누적 history가 없으면 새 이력으로 시작합니다. 따라서 과거 날짜를 복원하려면 해당 날짜의 원본 전체 스크리닝 파일이 별도로 필요합니다.
 
@@ -111,7 +112,7 @@ python .\run_live_screening.py AAPL NVDA LLY NOW
 
 기본값은 모의 데이터를 사용합니다. 실제 Yahoo Finance 데이터를 사용하려면 `.env` 또는 환경 변수에서 `DATA_PROVIDER=yahoo`로 설정합니다. Yahoo Finance 공급자를 사용할 때는 `pip install -r requirements.txt`로 `yfinance`를 설치해야 합니다. SEPA는 기본적으로 9개 조건 중 7개 이상이면 통과하며, `SEPA_MIN_SCORE`로 변경할 수 있습니다. RS 점수는 SPY 대비 최근 1개월·3개월·6개월 상대수익률을 각각 50%·30%·20%로 가중하여 계산합니다. SEPA 통과 종목에만 최근 20주를 대상으로 VCP를 분석하며, 3회 이상 수축폭이 점진적으로 작고 각 수축 기간이 5거래일 이상일 때 VCP로 판정합니다. VCP 결과에는 수축별 평균 거래량 감소, 50일 평균 대비 돌파 거래량, 피벗 돌파 여부와 피벗 가격이 포함됩니다.
 
-보관된 전체 결과 하나의 성과를 분석하려면 다음처럼 실행합니다. 여러 보관 결과가 있는 디렉터리를 입력하면 파일을 일괄 분석할 수도 있습니다. `weekly`, `monthly`, `quarterly`는 각각 5·21·63 거래일 뒤의 수익률이며, 아직 해당 기간이 지나지 않은 결과는 `pending`으로 표시됩니다. 디렉터리 분석 시 `listing_history.json`과 `listing_history.csv`가 함께 생성되며, 티커별 리스트업 연속일·최장 연속일·이탈일·재진입 횟수·점수 변화·날짜별 관측값을 포함합니다. 리스트업은 `result.passed == true`인 경우로 정의합니다. Analysis 워크플로는 `listing_history.csv`만 메일 첨부로 발송합니다.
+보관된 전체 결과 하나의 성과를 분석하려면 다음처럼 실행합니다. 여러 보관 결과가 있는 디렉터리를 입력하면 파일을 일괄 분석할 수도 있습니다. `two_weeks`, `monthly`, `six_weeks`, `two_months`, `quarterly`는 각각 10·21·30·42·63 거래일 뒤의 수익률이며, 아직 해당 기간이 지나지 않은 결과는 `pending`으로 표시됩니다. 디렉터리 분석 시 `listing_history.json`과 `listing_history.csv`가 함께 생성되며, 티커별 리스트업 연속일·최장 연속일·이탈일·재진입 횟수·점수 변화·날짜별 관측값을 포함합니다. 리스트업은 `result.passed == true`인 경우로 정의합니다. Analysis 워크플로는 `listing_history.csv`만 메일 첨부로 발송합니다.
 
 ```powershell
 cd backend
@@ -127,3 +128,25 @@ python .\run_performance_analysis.py `
 ```
 
 분석 결과는 입력 파일 옆에 `performance_sepa_screening_all_*.json` 이름으로 저장됩니다. 현재 분석기는 Yahoo Finance에서 분석 대상 티커의 최신 일봉을 다시 조회하므로 인터넷 연결이 필요합니다.
+
+## SQLite 분석 데이터베이스
+
+스크리닝과 성과분석은 `data/firefinder.db`에 다음 데이터를 누적합니다.
+
+- `symbols`: 티커, 섹터, 산업군
+- `screening_runs`: 스크리닝 실행과 집계일
+- `screening_results`: 날짜별 전체 종목의 SEPA 점수·통과 여부·조건·VCP 원본 결과
+- `daily_prices`: 성과분석에 사용한 일봉 가격
+- `screening_returns`: 10·21·30·42·63 거래일(2주·1개월·1.5개월·2개월·3개월) 미래 수익률과 상태
+
+로컬에서 기존 전체 스크리닝 JSON과 성과분석 JSON을 초기 DB로 옮기려면 다음처럼 실행합니다.
+
+```powershell
+cd backend
+$env:PYTHONPATH = "."
+$env:DATABASE_URL = "sqlite:///../data/firefinder.db"
+python .\import_screening_history.py ..\data\exports\verification `
+	--performance-dir ..\data\exports\verification
+```
+
+GitHub Actions에서는 각 작업 시작 전에 GCS의 `firefinder-db/latest/firefinder.db`를 내려받고, 스크리닝 또는 성과분석이 끝난 뒤 날짜별 경로와 `latest/`에 갱신된 DB를 다시 업로드합니다. DB 파일은 Git에 커밋하지 않습니다. GCS 버킷을 초기화한 첫 실행은 새 DB를 만들고, 이후 실행부터 누적 데이터를 복원합니다.

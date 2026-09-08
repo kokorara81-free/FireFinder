@@ -5,8 +5,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.analysis.performance import analyze_listing_history, analyze_result, merge_listing_history, parse_generated_date
+from app.analysis.performance import PERIOD_SESSIONS, analyze_listing_history, analyze_result, merge_listing_history, parse_generated_date
 from app.data.providers.yahoo_provider import YahooFinanceProvider
+from app.db.repository import persist_daily_prices, persist_performance_analysis
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,7 +63,7 @@ def run_analysis(input_path: Path, provider: YahooFinanceProvider) -> tuple[list
         analyses.append({
             "source_file": str(source_path),
             "screening_generated_at": payload["generated_at"],
-            "periods": {"weekly": 5, "monthly": 21, "quarterly": 63},
+            "periods": PERIOD_SESSIONS,
             "results": results,
             "errors": errors,
         })
@@ -212,6 +213,8 @@ def main() -> int:
             "symbols": analyze_listing_history(payloads),
         }
     output_dir.mkdir(parents=True, exist_ok=True)
+    persist_daily_prices(price_data)
+    persist_performance_analysis(analyses)
     for analysis in analyses:
         source_path = Path(analysis["source_file"])
         output_path = args.output or output_dir / f"performance_{source_path.stem}.json"
