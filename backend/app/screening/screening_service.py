@@ -17,7 +17,17 @@ class ScreeningService:
             batch_data = batch_method(request_symbols, periods=260) if batch_method else None
             benchmark_prices = batch_data.get("SPY", []) if batch_data is not None else self.provider.get_daily_prices("SPY", periods=260)
         except (RuntimeError, ValueError, OSError) as error:
-            return [{"symbol": symbol.strip().upper(), "passed": False, "score": 0, "error": str(error)} for symbol in symbols if symbol.strip()]
+            return [
+                {
+                    "symbol": symbol.strip().upper(),
+                    "sector": None,
+                    "industry": None,
+                    "passed": False,
+                    "score": 0,
+                    "error": str(error),
+                }
+                for symbol in symbols if symbol.strip()
+            ]
         for raw_symbol in symbols:
             symbol = raw_symbol.strip().upper()
             if not symbol:
@@ -33,5 +43,16 @@ class ScreeningService:
                 }
                 results.append({"symbol": symbol, **evaluation})
             except (RuntimeError, ValueError, OSError) as error:
-                results.append({"symbol": symbol, "passed": False, "score": 0, "error": str(error)})
+                results.append({
+                    "symbol": symbol,
+                    "sector": None,
+                    "industry": None,
+                    "passed": False,
+                    "score": 0,
+                    "error": str(error),
+                })
+        metadata_method = getattr(self.provider, "get_symbol_metadata", None)
+        metadata = metadata_method([result["symbol"] for result in results]) if metadata_method else {}
+        for result in results:
+            result.update(metadata.get(result["symbol"], {"sector": None, "industry": None}))
         return sorted(results, key=lambda result: result["score"], reverse=True)

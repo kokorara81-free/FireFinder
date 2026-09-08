@@ -33,7 +33,8 @@ def parse_args() -> argparse.Namespace:
 
 def write_outputs(results: list[dict], output_dir: Path) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    generated_at = datetime.now(timezone.utc)
+    timestamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
     archive_json_path = output_dir / f"sepa_screening_all_{timestamp}.json"
     archive_csv_path = output_dir / f"sepa_screening_all_{timestamp}.csv"
     json_path = output_dir / f"sepa_screening_{timestamp}.json"
@@ -45,22 +46,30 @@ def write_outputs(results: list[dict], output_dir: Path) -> tuple[Path, Path]:
         and result.get("vcp", {}).get("volume_dry_up") is True
     ]
 
+    dated_results = [{**result, "screening_date": generated_at.date().isoformat()} for result in results]
+    dated_vcp_results = [
+        result for result in dated_results
+        if result.get("passed") is True
+        and result.get("vcp", {}).get("found") is True
+        and result.get("vcp", {}).get("volume_dry_up") is True
+    ]
     archive_payload = {
         "provider": "YahooFinanceProvider",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": generated_at.isoformat(),
+        "screening_date": generated_at.date().isoformat(),
         "strategy": "SEPA Trend Template",
         "strategy_version": SepaStrategy.version,
         "result_count": len(results),
         "candidate_count": len(vcp_results),
-        "results": results,
+        "results": dated_results,
     }
     archive_json_path.write_text(json.dumps(archive_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
-    candidate_payload = {**archive_payload, "results": vcp_results}
+    candidate_payload = {**archive_payload, "results": dated_vcp_results}
     json_path.write_text(json.dumps(candidate_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
     condition_keys = list(SepaStrategy.condition_labels)
-    fieldnames = ["symbol", "score", "max_score", "passed", "current_price", "volume_ratio", "rs_score", "vcp_found", "vcp_contraction_count", "vcp_volume_dry_up", "vcp_breakout_volume_ratio", "vcp_breakout_volume_confirmed", "vcp_pivot_breakout", "vcp_pivot_price", "vcp_pivot_date", *condition_keys, "error"]
+    fieldnames = ["screening_date", "symbol", "sector", "industry", "score", "max_score", "passed", "current_price", "volume_ratio", "rs_score", "vcp_found", "vcp_contraction_count", "vcp_volume_dry_up", "vcp_breakout_volume_ratio", "vcp_breakout_volume_confirmed", "vcp_pivot_breakout", "vcp_pivot_price", "vcp_pivot_date", *condition_keys, "error"]
     def write_csv(path: Path, rows: list[dict]) -> None:
         with path.open("w", newline="", encoding="utf-8-sig") as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
@@ -81,8 +90,8 @@ def write_outputs(results: list[dict], output_dir: Path) -> tuple[Path, Path]:
                 row.update({key: "통과" if result.get("conditions", {}).get(key) else "미달" for key in condition_keys})
                 writer.writerow(row)
 
-    write_csv(archive_csv_path, results)
-    write_csv(csv_path, vcp_results)
+    write_csv(archive_csv_path, dated_results)
+    write_csv(csv_path, dated_vcp_results)
     return json_path, csv_path
 
 

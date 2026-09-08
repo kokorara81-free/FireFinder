@@ -128,3 +128,24 @@ class YahooFinanceProvider(MarketDataProvider):
                 except (KeyError, TypeError, ValueError):
                     continue
         return metrics
+
+    def get_symbol_metadata(self, symbols: list[str]) -> dict[str, dict]:
+        try:
+            import yfinance as yf
+        except ImportError as error:
+            raise RuntimeError("yfinance is required for YahooFinanceProvider") from error
+
+        metadata = {}
+        for symbol in symbols:
+            source_symbol = symbol.strip().upper()
+            if not source_symbol:
+                continue
+            try:
+                info = yf.Ticker(self.to_yahoo_symbol(source_symbol)).info
+                metadata[source_symbol] = {
+                    "sector": info.get("sector"),
+                    "industry": info.get("industry"),
+                }
+            except Exception:
+                metadata[source_symbol] = {"sector": None, "industry": None}
+        return metadata

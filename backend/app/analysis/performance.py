@@ -19,6 +19,8 @@ def analyze_listing_history(payloads: list[tuple[object, dict]]) -> list[dict]:
                 continue
             observations_by_symbol[symbol][screening_date] = {
                 "date": screening_date,
+                "sector": result.get("sector"),
+                "industry": result.get("industry"),
                 "score": result.get("score"),
                 "passed": bool(result.get("passed", False)),
                 "error": result.get("error"),
@@ -48,6 +50,8 @@ def merge_listing_history(previous: dict, payload: dict) -> dict:
             continue
         observations_by_symbol[symbol][screening_date] = {
             "date": screening_date,
+            "sector": result.get("sector"),
+            "industry": result.get("industry"),
             "score": result.get("score"),
             "passed": bool(result.get("passed", False)),
             "error": result.get("error"),
@@ -106,6 +110,8 @@ def _build_listing_histories(observations_by_symbol: dict[str, dict[str, dict]])
         )
         histories.append({
             "symbol": symbol,
+            "sector": observations[-1].get("sector") if observations else None,
+            "industry": observations[-1].get("industry") if observations else None,
             "first_seen_date": observations[0]["date"] if observations else None,
             "first_listed_date": listed_dates[0] if listed_dates else None,
             "last_listed_date": listed_dates[-1] if listed_dates else None,

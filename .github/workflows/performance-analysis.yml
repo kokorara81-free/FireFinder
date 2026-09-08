@@ -32,16 +32,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
+      - name: Check US market holiday
+        id: market_day
+        shell: bash
+        run: |
+          MARKET_STATUS="$(python -m app.core.market_calendar)"
+          echo "NYSE market status: ${MARKET_STATUS}"
+          echo "open=$([[ "${MARKET_STATUS}" == "open" ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+
       - name: Authenticate to Google Cloud
+        if: steps.market_day.outputs.open == 'true'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up Google Cloud CLI
+        if: steps.market_day.outputs.open == 'true'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Download latest screening result and history
+        if: steps.market_day.outputs.open == 'true'
         run: |
           test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty." && exit 1)
           mkdir -p data/current-screening data/previous-history
@@ -59,6 +70,7 @@ jobs:
           echo "Latest screening: ${SCREENING_URI}"
 
       - name: Analyze archived screening performance
+        if: steps.market_day.outputs.open == 'true'
         run: |
           python backend/run_performance_analysis.py \
             --screening-file data/current-screening/sepa_screening_all_latest.json \
@@ -66,6 +78,7 @@ jobs:
             --output-dir data/performance-analysis
 
       - name: Verify analysis email input
+        if: steps.market_day.outputs.open == 'true'
         run: |
           test -s data/performance-analysis/listing_history.csv
           echo "Analysis CSV ready: $(wc -c < data/performance-analysis/listing_history.csv) bytes"
@@ -74,9 +87,11 @@ jobs:
           test -n "${REPORT_RECIPIENT}" || (echo "REPORT_RECIPIENT is empty." && exit 1)
 
       - name: Email analysis CSV report
+        if: steps.market_day.outputs.open == 'true'
         run: python -u backend/send_analysis_email.py
 
       - name: Upload performance analysis to Cloud Storage
+        if: steps.market_day.outputs.open == 'true'
         run: |
           ANALYSIS_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
           ANALYSIS_COUNT="$(find data/performance-analysis -maxdepth 1 -type f -name 'performance_*.json' | wc -l)"

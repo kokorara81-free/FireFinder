@@ -97,7 +97,7 @@ def write_listing_history(
     print(f"리스트업 이력 종목 수: {len(listing_history['symbols'])}")
     listing_history_csv_path = output_dir / "listing_history.csv"
     fieldnames = [
-        "symbol", "first_seen_date", "first_listed_date", "last_listed_date", "return_since_last_listed_percent", "listed_count",
+        "symbol", "sector", "industry", "first_seen_date", "first_listed_date", "last_listed_date", "return_since_last_listed_percent", "listed_count",
         "current_streak", "longest_streak", "reentries", "latest_date", "latest_score", "latest_volume_ratio",
         "latest_rs_score", "latest_passed",
         "vcp_analyzed", "vcp_found", "vcp_contraction_count", "vcp_volume_dry_up",
@@ -109,6 +109,8 @@ def write_listing_history(
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writerow({
             "symbol": "티커",
+            "sector": "섹터",
+            "industry": "산업군",
             "first_seen_date": "스크리닝 결과에 처음 등장한 날짜",
             "first_listed_date": "SEPA 통과가 처음 기록된 날짜",
             "last_listed_date": "SEPA 통과가 가장 최근 기록된 날짜",
@@ -144,6 +146,8 @@ def write_listing_history(
             latest_vcp = symbol_history.get("latest_vcp") or {}
             writer.writerow({
                 "symbol": symbol_history["symbol"],
+                "sector": symbol_history.get("sector") or "",
+                "industry": symbol_history.get("industry") or "",
                 "first_seen_date": symbol_history.get("first_seen_date") or "",
                 "first_listed_date": symbol_history["first_listed_date"] or "",
                 "last_listed_date": symbol_history["last_listed_date"] or "",

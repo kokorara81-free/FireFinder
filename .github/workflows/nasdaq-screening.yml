@@ -30,19 +30,31 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
+      - name: Check US market holiday
+        id: market_day
+        shell: bash
+        run: |
+          MARKET_STATUS="$(python -m app.core.market_calendar)"
+          echo "NYSE market status: ${MARKET_STATUS}"
+          echo "open=$([[ "${MARKET_STATUS}" == "open" ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+
       - name: Run Nasdaq screening
+        if: steps.market_day.outputs.open == 'true'
         run: python backend/run_live_screening.py --universe --output-dir data/exports
 
       - name: Authenticate to Google Cloud
+        if: steps.market_day.outputs.open == 'true'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up Google Cloud CLI
+        if: steps.market_day.outputs.open == 'true'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Upload reports to Cloud Storage
+        if: steps.market_day.outputs.open == 'true'
         run: |
           test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty. Set it in Settings > Secrets and variables > Actions > Variables." && exit 1)
           echo "Using GCS bucket: ${GCS_BUCKET}"
