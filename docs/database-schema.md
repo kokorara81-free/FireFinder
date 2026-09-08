@@ -8,7 +8,7 @@ This document is the semantic contract for SQLite data and for future AI-generat
 - `screening_runs.generated_at`, `started_at`, and `completed_at` are UTC timestamps.
 - `daily_prices.trading_date` and `screening_returns.target_date` are trading dates. Weekends and US market holidays do not have rows.
 - `screening_results` has one row per `(screening_runs.id, symbols.id)`. Failed results are intentionally retained.
-- `screening_returns.horizon_sessions` is a trading-session count: `10` = 2 weeks, `21` = 1 month, `30` = 1.5 months, `42` = 2 months, and `63` = 3 months.
+- `screening_returns.horizon_sessions` is a trading-session count: `10` = 2 weeks, `21` = 1 month, `30` = 1.5 months, `42` = 2 months, `63` = 3 months, and `84` through `252` in 21-session increments = 4 through 12 months.
 
 ## Relationships
 

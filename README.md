@@ -112,7 +112,7 @@ python .\run_live_screening.py AAPL NVDA LLY NOW
 
 기본값은 모의 데이터를 사용합니다. 실제 Yahoo Finance 데이터를 사용하려면 `.env` 또는 환경 변수에서 `DATA_PROVIDER=yahoo`로 설정합니다. Yahoo Finance 공급자를 사용할 때는 `pip install -r requirements.txt`로 `yfinance`를 설치해야 합니다. SEPA는 기본적으로 9개 조건 중 7개 이상이면 통과하며, `SEPA_MIN_SCORE`로 변경할 수 있습니다. RS 점수는 SPY 대비 최근 1개월·3개월·6개월 상대수익률을 각각 50%·30%·20%로 가중하여 계산합니다. SEPA 통과 종목에만 최근 20주를 대상으로 VCP를 분석하며, 3회 이상 수축폭이 점진적으로 작고 각 수축 기간이 5거래일 이상일 때 VCP로 판정합니다. VCP 결과에는 수축별 평균 거래량 감소, 50일 평균 대비 돌파 거래량, 피벗 돌파 여부와 피벗 가격이 포함됩니다.
 
-보관된 전체 결과 하나의 성과를 분석하려면 다음처럼 실행합니다. 여러 보관 결과가 있는 디렉터리를 입력하면 파일을 일괄 분석할 수도 있습니다. `two_weeks`, `monthly`, `six_weeks`, `two_months`, `quarterly`는 각각 10·21·30·42·63 거래일 뒤의 수익률이며, 아직 해당 기간이 지나지 않은 결과는 `pending`으로 표시됩니다. 디렉터리 분석 시 `listing_history.json`과 `listing_history.csv`가 함께 생성되며, 티커별 리스트업 연속일·최장 연속일·이탈일·재진입 횟수·점수 변화·날짜별 관측값을 포함합니다. 리스트업은 `result.passed == true`인 경우로 정의합니다. Analysis 워크플로는 `listing_history.csv`만 메일 첨부로 발송합니다.
+보관된 전체 결과 하나의 성과를 분석하려면 다음처럼 실행합니다. 여러 보관 결과가 있는 디렉터리를 입력하면 파일을 일괄 분석할 수도 있습니다. `two_weeks`, `monthly`, `six_weeks`, `two_months`, `quarterly`는 각각 10·21·30·42·63 거래일 뒤의 수익률이고, `four_months`부터 `twelve_months`까지는 84·105·126·147·168·189·210·231·252 거래일 뒤의 수익률입니다. 아직 해당 기간이 지나지 않은 결과는 `pending`으로 표시됩니다. 디렉터리 분석 시 `listing_history.json`과 `listing_history.csv`가 함께 생성되며, 티커별 리스트업 연속일·최장 연속일·이탈일·재진입 횟수·점수 변화·날짜별 관측값을 포함합니다. 리스트업은 `result.passed == true`인 경우로 정의합니다. Analysis 워크플로는 `listing_history.csv`만 메일 첨부로 발송합니다.
 
 ```powershell
 cd backend
