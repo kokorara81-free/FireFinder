@@ -97,6 +97,10 @@ jobs:
         if: steps.market_day.outputs.open == 'true'
         run: python -u backend/send_analysis_email.py
 
+      - name: Verify SQLite database
+        if: steps.market_day.outputs.open == 'true'
+        run: python backend/inspect_database.py --fail-on-empty
+
       - name: Upload performance analysis to Cloud Storage
         if: steps.market_day.outputs.open == 'true'
         run: |

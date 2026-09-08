@@ -65,6 +65,10 @@ jobs:
         if: steps.market_day.outputs.open == 'true'
         run: python backend/run_live_screening.py --universe --output-dir data/exports
 
+      - name: Verify SQLite database
+        if: steps.market_day.outputs.open == 'true'
+        run: python backend/inspect_database.py --fail-on-empty
+
       - name: Upload reports to Cloud Storage
         if: steps.market_day.outputs.open == 'true'
         run: |
