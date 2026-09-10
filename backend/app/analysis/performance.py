@@ -114,11 +114,12 @@ def _build_listing_histories(observations_by_symbol: dict[str, dict[str, dict]])
                     "error": current["error"],
                 })
 
-        reentries = sum(
-            1
-            for previous, current in zip(observations, observations[1:])
-            if not previous["passed"] and current["passed"]
-        )
+        reentries = 0
+        ever_listed = False
+        for previous, current in zip(observations, observations[1:]):
+            if ever_listed and not previous["passed"] and current["passed"]:
+                reentries += 1
+            ever_listed = ever_listed or previous["passed"]
         histories.append({
             "symbol": symbol,
             "sector": observations[-1].get("sector") if observations else None,

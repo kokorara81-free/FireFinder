@@ -51,13 +51,13 @@ class VcpAnalyzer:
                     "average_volume": round(average_volume),
                 })
 
-        contractions = contractions[-self.rules.minimum_contractions:]
-        decreasing = self._is_decreasing(contractions)
-        volume_dry_up = self._volume_dry_up(contractions)
+        recent_contractions = contractions[-self.rules.minimum_contractions:]
+        decreasing = self._is_decreasing(recent_contractions)
+        volume_dry_up = self._volume_dry_up(recent_contractions)
         durations_valid = all(
-            item["duration_days"] >= self.rules.minimum_contraction_days for item in contractions
+            item["duration_days"] >= self.rules.minimum_contraction_days for item in recent_contractions
         )
-        found = len(contractions) >= self.rules.minimum_contractions and decreasing and durations_valid
+        found = len(recent_contractions) >= self.rules.minimum_contractions and decreasing and durations_valid
         result = {
             "found": found,
             "lookback_weeks": self.rules.lookback_weeks,
