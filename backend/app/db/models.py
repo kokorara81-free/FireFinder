@@ -92,7 +92,7 @@ class ScreeningReturn(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal return row identifier.")
     screening_result_id: Mapped[int] = mapped_column(ForeignKey("screening_results.id"), index=True, comment="Foreign key to the screening result being evaluated.")
-    horizon_sessions: Mapped[int] = mapped_column(Integer, comment="Number of trading sessions after screening: 10, 21, 30, 42, or 63.")
+    horizon_sessions: Mapped[int] = mapped_column(Integer, comment="Number of trading sessions after screening, including 7, 15, 21, 30, 42, 63, and longer monthly horizons.")
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True, comment="Actual trading date reached at the requested horizon; NULL while pending.")
     target_price: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Price at target_date in USD; NULL while pending.")
     return_percent: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Forward return percentage: (target_price / screening_price - 1) * 100.")

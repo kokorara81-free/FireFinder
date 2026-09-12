@@ -1,6 +1,9 @@
 data/exports/
 data/logs/
+*.db
+*.tsbuildinfo
 backend/firefinder.db
+backend/firefinder-user.db
 data/firefinder.db
 backend/.venv/
 __pycache__/

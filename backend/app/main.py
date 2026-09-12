@@ -3,11 +3,25 @@ from fastapi.responses import HTMLResponse
 
 from app.api.routes.health import router as health_router
 from app.api.routes.screening import router as screening_router
+from app.api.routes.annotations import router as annotations_router
+from app.api.routes.journal import router as journal_router
+from app.api.routes.analytics import router as analytics_router
+from app.db.database import initialize_database
+from app.db.user_database import initialize_user_database
 
 app = FastAPI(title="FireFinder", version="0.1.0")
 
 app.include_router(health_router, prefix="/api")
 app.include_router(screening_router, prefix="/api")
+app.include_router(annotations_router, prefix="/api")
+app.include_router(journal_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
+
+
+@app.on_event("startup")
+def initialize_user_storage() -> None:
+	initialize_database()
+	initialize_user_database()
 
 
 @app.get("/", response_class=HTMLResponse)

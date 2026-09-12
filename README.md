@@ -158,3 +158,5 @@ python .\inspect_database.py
 GCS의 최신 DB를 확인하려면 먼저 `firefinder-db/latest/firefinder.db`를 `data/firefinder.db`로 내려받은 뒤 같은 명령을 실행합니다. 출력에서 `screening_runs`, `screening_results`, `screening_returns`가 증가하는지, `latest screening date`가 최신 거래일인지, `return horizons`에 `pending` 또는 `complete` 행이 있는지 확인하면 됩니다. `results missing sector or industry`가 크면 Yahoo Finance 메타데이터가 조회되지 않은 종목이 있는 것입니다.
 
 GitHub Actions에서는 각 작업 시작 전에 GCS의 `firefinder-db/latest/firefinder.db`를 내려받고, 스크리닝 또는 성과분석이 끝난 뒤 날짜별 경로와 `latest/`에 갱신된 DB를 다시 업로드합니다. DB 파일은 Git에 커밋하지 않습니다. GCS 버킷을 초기화한 첫 실행은 새 DB를 만들고, 이후 실행부터 누적 데이터를 복원합니다.
+
+매주 월요일 UTC 13:00에는 별도 `Weekly FireFinder DB Backup` 워크플로가 전주 DB를 `firefinder-db/weekly/YYYY-Www/firefinder.db`에 보관하고, `firefinder-db/weekly/latest/firefinder.db`를 최신 주간본으로 갱신합니다. 이 워크플로를 수동 실행하면 실행 시점 기준 전주 ISO 주차에 현재 `latest` DB를 보관합니다.

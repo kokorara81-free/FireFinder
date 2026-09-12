@@ -160,3 +160,4 @@ def persist_performance_analysis(analyses: list[dict]) -> None:
                     row.target_date = _date(period.get("date"))
                     row.target_price = _number(period.get("price"))
                     row.return_percent = _number(period.get("return_percent"))
+

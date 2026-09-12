@@ -1,0 +1,48 @@
+name: Weekly FireFinder DB Backup
+
+on:
+  schedule:
+    # Monday 13:00 UTC, after the previous week's final screening window.
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GCS_BUCKET: ${{ vars.GCS_BUCKET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Archive previous week's database
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty." && exit 1)
+          test "$(date -u +%u)" = "1"
+          WEEK_KEY="$(date -u -d '7 days ago' +%G-W%V)"
+          SOURCE="gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db.gz"
+          WEEKLY_PREFIX="gs://${GCS_BUCKET}/firefinder-db/weekly/${WEEK_KEY}"
+          if ! gcloud storage ls "${SOURCE}" >/dev/null 2>&1; then
+            echo "No latest compressed database found at ${SOURCE}."
+            exit 1
+          fi
+          gcloud storage cp "${SOURCE}" "${WEEKLY_PREFIX}/firefinder.db.gz"
+          gcloud storage cp "${SOURCE}" "gs://${GCS_BUCKET}/firefinder-db/weekly/latest/firefinder.db.gz"
+          gcloud storage ls "${WEEKLY_PREFIX}/"

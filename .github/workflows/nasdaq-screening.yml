@@ -1,4 +1,4 @@
-name: Nasdaq SEPA Screening
+name: FireFinder Daily Screening and Analysis
 
 on:
   schedule:
@@ -18,6 +18,9 @@ jobs:
       PYTHONPATH: backend
       DATABASE_URL: sqlite:///./data/firefinder.db
       GCS_BUCKET: ${{ vars.GCS_BUCKET }}
+      GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      REPORT_RECIPIENT: ${{ secrets.REPORT_RECIPIENT }}
 
     steps:
       - name: Check out repository
@@ -54,9 +57,13 @@ jobs:
         if: steps.market_day.outputs.open == 'true'
         run: |
           mkdir -p data
-          if gcloud storage ls "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" >/dev/null 2>&1; then
+          if gcloud storage ls "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db.gz" >/dev/null 2>&1; then
+            gcloud storage cp "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db.gz" data/firefinder.db.gz
+            gzip -dc data/firefinder.db.gz > data/firefinder.db
+            echo "Restored compressed SQLite database from GCS."
+          elif gcloud storage ls "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" >/dev/null 2>&1; then
             gcloud storage cp "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db" data/firefinder.db
-            echo "Restored SQLite database from GCS."
+            echo "Restored legacy uncompressed SQLite database from GCS."
           else
             echo "No SQLite database found; starting a new database."
           fi
@@ -69,16 +76,75 @@ jobs:
         if: steps.market_day.outputs.open == 'true'
         run: python backend/inspect_database.py --fail-on-empty
 
-      - name: Upload reports to Cloud Storage
+      - name: Prepare performance analysis inputs
+        if: steps.market_day.outputs.open == 'true'
+        run: |
+          mkdir -p data/current-screening data/previous-history
+          SCREENING_FILE="$(find data/exports -maxdepth 1 -type f -name 'sepa_screening_all_*.json' | sort | tail -n 1)"
+          test -n "${SCREENING_FILE}" || (echo "No full screening JSON found." && exit 1)
+          cp "${SCREENING_FILE}" data/current-screening/sepa_screening_all_latest.json
+          REPORT_BUNDLE_URI="$(gcloud storage ls --recursive "gs://${GCS_BUCKET}/firefinder-reports/**" 2>/dev/null \
+            | grep -E '/firefinder-reports\.tar\.gz$' | sort | tail -n 1)"
+          if test -n "${REPORT_BUNDLE_URI}"; then
+            mkdir -p data/previous-history/bundle
+            gcloud storage cp "${REPORT_BUNDLE_URI}" data/previous-history/firefinder-reports.tar.gz
+            tar -xzf data/previous-history/firefinder-reports.tar.gz \
+              -C data/previous-history/bundle
+            HISTORY_FILE="$(find data/previous-history/bundle -type f -name 'listing_history.json' | head -n 1)"
+            test -n "${HISTORY_FILE}" || (echo "No listing history found in report bundle." && exit 1)
+            cp "${HISTORY_FILE}" data/previous-history/listing_history.json
+          elif gcloud storage ls "gs://${GCS_BUCKET}/performance-analysis/latest/listing_history.json" >/dev/null 2>&1; then
+            gcloud storage cp "gs://${GCS_BUCKET}/performance-analysis/latest/listing_history.json" \
+              data/previous-history/listing_history.json
+          else
+            echo '{"symbols": []}' > data/previous-history/listing_history.json
+            echo "No previous listing history found; starting a new history."
+          fi
+
+      - name: Analyze archived screening performance
+        if: steps.market_day.outputs.open == 'true'
+        run: |
+          python backend/run_performance_analysis.py \
+            --screening-file data/current-screening/sepa_screening_all_latest.json \
+            --history-file data/previous-history/listing_history.json \
+            --output-dir data/performance-analysis
+
+      - name: Verify analysis email input
+        if: steps.market_day.outputs.open == 'true'
+        run: |
+          test -s data/performance-analysis/listing_history.csv
+          echo "Analysis CSV ready: $(wc -c < data/performance-analysis/listing_history.csv) bytes"
+          test -n "${GMAIL_USERNAME}" || (echo "GMAIL_USERNAME is empty." && exit 1)
+          test -n "${GMAIL_APP_PASSWORD}" || (echo "GMAIL_APP_PASSWORD is empty." && exit 1)
+          test -n "${REPORT_RECIPIENT}" || (echo "REPORT_RECIPIENT is empty." && exit 1)
+
+      - name: Email analysis CSV report
+        if: steps.market_day.outputs.open == 'true'
+        run: python -u backend/send_analysis_email.py
+
+      - name: Verify final SQLite database
+        if: steps.market_day.outputs.open == 'true'
+        run: python backend/inspect_database.py --fail-on-empty
+
+      - name: Upload daily reports and compressed database
         if: steps.market_day.outputs.open == 'true'
         run: |
           test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty. Set it in Settings > Secrets and variables > Actions > Variables." && exit 1)
           echo "Using GCS bucket: ${GCS_BUCKET}"
           RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
           echo "RUN_TIMESTAMP=${RUN_TIMESTAMP}" >> "${GITHUB_ENV}"
-          gcloud storage cp data/exports/sepa_screening_* "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
-          gcloud storage cp data/firefinder.db "gs://${GCS_BUCKET}/firefinder-db/${RUN_TIMESTAMP}/firefinder.db"
-          gcloud storage cp data/firefinder.db "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db"
+          ANALYSIS_COUNT="$(find data/performance-analysis -maxdepth 1 -type f -name 'performance_*.json' | wc -l)"
+          test "${ANALYSIS_COUNT}" -gt 0 || (echo "No performance analysis files generated." && exit 1)
+          mkdir -p data/report-bundle/screening data/report-bundle/performance
+          cp data/exports/sepa_screening_* data/report-bundle/screening/
+          cp data/performance-analysis/performance_*.json data/performance-analysis/listing_history.json data/performance-analysis/listing_history.csv \
+            data/report-bundle/performance/
+          tar -czf data/firefinder-reports.tar.gz -C data/report-bundle .
+          gcloud storage cp data/firefinder-reports.tar.gz \
+            "gs://${GCS_BUCKET}/firefinder-reports/${RUN_TIMESTAMP}/firefinder-reports.tar.gz"
+          gzip -c data/firefinder.db > data/firefinder.db.gz
+          gcloud storage cp data/firefinder.db.gz "gs://${GCS_BUCKET}/firefinder-db/${RUN_TIMESTAMP}/firefinder.db.gz"
+          gcloud storage cp data/firefinder.db.gz "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db.gz"
           gcloud storage ls "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
 # Screening output is retained in Cloud Storage for later analysis.
 
