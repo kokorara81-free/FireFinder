@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 type View = "dashboard" | "screening" | "analysis-report" | "watchlist" | "journal" | "history";
-type ScreeningResult = { symbol: string; company_name?: string; sector?: string | null; industry?: string | null; score: number; max_score: number; passed: boolean; is_new_entry?: boolean; is_dropout?: boolean; sepa_streak_days?: number; screening_date?: string | null; current_price?: number | null; average_50?: number | null; average_150?: number | null; average_200?: number | null; volume_ratio?: number | null; rs_score?: number | null; vcp_found?: boolean | null; conditions?: Record<string, boolean>; vcp?: Record<string, unknown>; raw_result?: Record<string, unknown> };
+type ScreeningResult = { symbol: string; company_name?: string; sector?: string | null; industry?: string | null; score: number; max_score: number; passed: boolean; is_new_entry?: boolean; is_dropout?: boolean; sepa_streak_days?: number; screening_date?: string | null; current_price?: number | null; trailing_pe?: number | null; forward_pe?: number | null; average_50?: number | null; average_150?: number | null; average_200?: number | null; volume_ratio?: number | null; rs_score?: number | null; vcp_found?: boolean | null; conditions?: Record<string, boolean>; vcp?: Record<string, unknown>; raw_result?: Record<string, unknown> };
 type ScreeningFilter = "passed" | "new" | "dropout" | null;
 type DashboardData = { screening_date: string | null; total_symbols: number; passed_count: number; scanned_count?: number; new_entries: number; dropouts: number; important_count: number; provider?: string | null; strategy?: string | null; };
 type TrendPoint = { date: string; sectors: Record<string, number>; passed_count: number };
@@ -38,9 +38,9 @@ type AnalysisReturn = { target_date: string | null; target_price: number | null;
 type AnalysisRow = { symbol: string; screening_date: string | null; sector: string | null; industry: string | null; score: number | null; max_score: number | null; passed: boolean; screening_price: number | null; volume_ratio: number | null; rs_score: number | null; vcp_found: boolean | null; conditions: Record<string, boolean>; vcp: Record<string, unknown>; is_watchlisted: boolean; interest_state?: InterestState; average_returns: Record<string, number | null>; horizon_returns: Record<string, AnalysisReturn>; target_date?: string | null; target_price?: number | null; return_percent?: number | null; status?: string };
 type AnalysisReport = { horizons: number[]; horizon: number; horizon_label: string; filters: { passed_only: boolean; sector: string | null; status: string; min_score: number }; summary: { sample_count: number; row_count: number; average_return: number | null; median_return: number | null; win_rate: number | null }; sectors: string[]; rows: AnalysisRow[] };
 const analysisHorizonLabels: Record<number, string> = { 7: "7일", 15: "15일", 21: "1개월", 30: "6주", 42: "2개월", 63: "3개월", 84: "4개월", 105: "5개월", 126: "6개월" };
-type ColumnKey = "symbol" | "sector" | "score" | "price" | "volume" | "rs" | "vcp" | "pivotPrice" | "pivotDate" | "pivotDistance" | "streak" | "status";
-const defaultColumns: ColumnKey[] = ["symbol", "sector", "score", "price", "volume", "rs", "vcp", "pivotPrice", "pivotDate", "pivotDistance", "streak", "status"];
-const columnLabels: Record<ColumnKey, string> = { symbol: "종목", sector: "섹터", score: "점수", price: "현재가", volume: "거래량비", rs: "RS 강도", vcp: "VCP", pivotPrice: "피벗가", pivotDate: "피벗일", pivotDistance: "피벗 거리", streak: "SEPA 연속", status: "판정" };
+type ColumnKey = "symbol" | "sector" | "score" | "price" | "trailingPE" | "forwardPE" | "volume" | "rs" | "vcp" | "pivotPrice" | "pivotDate" | "pivotDistance" | "streak" | "status";
+const defaultColumns: ColumnKey[] = ["symbol", "sector", "score", "price", "trailingPE", "forwardPE", "volume", "rs", "vcp", "pivotPrice", "pivotDate", "pivotDistance", "streak", "status"];
+const columnLabels: Record<ColumnKey, string> = { symbol: "종목", sector: "섹터", score: "점수", price: "현재가", trailingPE: "Trailing P/E", forwardPE: "Forward P/E", volume: "거래량비", rs: "RS 강도", vcp: "VCP", pivotPrice: "피벗가", pivotDate: "피벗일", pivotDistance: "피벗 거리", streak: "SEPA 연속", status: "판정" };
 
 const fallbackResults: ScreeningResult[] = [
   { symbol: "NVDA", sector: "Technology", industry: "Semiconductors", score: 9, max_score: 9, passed: true, current_price: 177.42, rs_score: 98.4 },
@@ -287,6 +287,8 @@ function renderScreeningCell(column: ColumnKey, result: ScreeningResult, toggleD
   if (column === "sector") return <><strong>{result.sector ?? "-"}</strong><small>{result.industry ?? "-"}</small></>;
   if (column === "score") return <button className="score-detail-button" onClick={toggleDetails} aria-label={`${result.symbol} 점수 상세 보기`}>{result.score}<em>/{result.max_score}</em></button>;
   if (column === "price") return result.current_price ? `$${result.current_price.toFixed(2)}` : "-";
+  if (column === "trailingPE") return result.trailing_pe?.toFixed(2) ?? "-";
+  if (column === "forwardPE") return result.forward_pe?.toFixed(2) ?? "-";
   if (column === "volume") return result.volume_ratio == null ? "-" : `${result.volume_ratio.toFixed(2)}x`;
   if (column === "rs") return <span className="rs-score">{result.rs_score?.toFixed(1) ?? "-"}</span>;
   if (column === "vcp") return <span className={`status-pill ${result.vcp_found ? "passed" : "watch"}`}>{result.vcp_found == null ? "-" : result.vcp_found ? "발견" : "미발견"}</span>;

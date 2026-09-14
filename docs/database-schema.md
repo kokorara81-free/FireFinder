@@ -30,6 +30,7 @@ Join keys:
 - Use `screening_results.passed = 1` to select SEPA-passed observations.
 - Use `screening_results.passed = 0` as the comparison group; do not remove failed results when measuring selection effect.
 - `screening_results.score` is the number of passed SEPA conditions, and `max_score` is the available maximum for that strategy version.
+- `screening_results.trailing_pe` and `forward_pe` are Yahoo Finance price-to-earnings ratios captured when the screening runs; either value can be `NULL` when Yahoo does not provide it.
 - `screening_results.conditions_json` and `vcp_json` are JSON text for detailed fields. `raw_result_json` preserves the original full result.
 - `screening_returns.return_percent` is calculated as `(target_price / screening_results.current_price - 1) * 100`.
 - Ignore `screening_returns` rows with `status = 'pending'` when calculating realized performance.

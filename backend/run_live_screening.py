@@ -70,7 +70,7 @@ def write_outputs(results: list[dict], output_dir: Path) -> tuple[Path, Path]:
     json_path.write_text(json.dumps(candidate_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
     condition_keys = list(SepaStrategy.condition_labels)
-    fieldnames = ["screening_date", "symbol", "sector", "industry", "score", "max_score", "passed", "current_price", "volume_ratio", "rs_score", "vcp_found", "vcp_contraction_count", "vcp_volume_dry_up", "vcp_breakout_volume_ratio", "vcp_breakout_volume_confirmed", "vcp_pivot_breakout", "vcp_pivot_price", "vcp_pivot_date", *condition_keys, "error"]
+    fieldnames = ["screening_date", "symbol", "sector", "industry", "score", "max_score", "passed", "current_price", "trailing_pe", "forward_pe", "volume_ratio", "rs_score", "vcp_found", "vcp_contraction_count", "vcp_volume_dry_up", "vcp_breakout_volume_ratio", "vcp_breakout_volume_confirmed", "vcp_pivot_breakout", "vcp_pivot_price", "vcp_pivot_date", *condition_keys, "error"]
     def write_csv(path: Path, rows: list[dict]) -> None:
         with path.open("w", newline="", encoding="utf-8-sig") as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)

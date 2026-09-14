@@ -22,6 +22,8 @@ class ScreeningService:
                     "symbol": symbol.strip().upper(),
                     "sector": None,
                     "industry": None,
+                    "trailing_pe": None,
+                    "forward_pe": None,
                     "passed": False,
                     "score": 0,
                     "error": str(error),
@@ -47,6 +49,8 @@ class ScreeningService:
                     "symbol": symbol,
                     "sector": None,
                     "industry": None,
+                    "trailing_pe": None,
+                    "forward_pe": None,
                     "passed": False,
                     "score": 0,
                     "error": str(error),
@@ -54,5 +58,10 @@ class ScreeningService:
         metadata_method = getattr(self.provider, "get_symbol_metadata", None)
         metadata = metadata_method([result["symbol"] for result in results]) if metadata_method else {}
         for result in results:
-            result.update(metadata.get(result["symbol"], {"sector": None, "industry": None}))
+            result.update(metadata.get(result["symbol"], {
+                "sector": None,
+                "industry": None,
+                "trailing_pe": None,
+                "forward_pe": None,
+            }))
         return sorted(results, key=lambda result: result["score"], reverse=True)

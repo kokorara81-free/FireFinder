@@ -75,6 +75,8 @@ class ScreeningResult(Base):
     max_score: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Maximum available SEPA score for this strategy version.")
     passed: Mapped[bool] = mapped_column(Boolean, default=False, comment="Whether the ticker passed the configured SEPA threshold.")
     current_price: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Price observed at screening time in USD.")
+    trailing_pe: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Trailing twelve-month price-to-earnings ratio reported by Yahoo Finance at screening time.")
+    forward_pe: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Forward price-to-earnings ratio reported by Yahoo Finance at screening time.")
     volume_ratio: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Recent volume divided by the strategy's comparison average.")
     rs_score: Mapped[float | None] = mapped_column(Float, nullable=True, comment="Relative-strength score versus SPY calculated at screening time.")
     vcp_found: Mapped[bool | None] = mapped_column(Boolean, nullable=True, comment="Whether the VCP analyzer found a valid volatility contraction pattern.")

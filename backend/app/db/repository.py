@@ -75,6 +75,8 @@ def persist_screening_results(
             stored.max_score = _number(result.get("max_score"))
             stored.passed = bool(result.get("passed", False))
             stored.current_price = _number(result.get("current_price"))
+            stored.trailing_pe = _number(result.get("trailing_pe"))
+            stored.forward_pe = _number(result.get("forward_pe"))
             stored.volume_ratio = _number(result.get("volume_ratio"))
             stored.rs_score = _number(result.get("rs_score"))
             stored.vcp_found = result.get("vcp", {}).get("found")

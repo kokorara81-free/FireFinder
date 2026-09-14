@@ -145,7 +145,21 @@ class YahooFinanceProvider(MarketDataProvider):
                 metadata[source_symbol] = {
                     "sector": info.get("sector"),
                     "industry": info.get("industry"),
+                    "trailing_pe": self._finite_number(info.get("trailingPE")),
+                    "forward_pe": self._finite_number(info.get("forwardPE")),
                 }
             except Exception:
-                metadata[source_symbol] = {"sector": None, "industry": None}
+                metadata[source_symbol] = {
+                    "sector": None,
+                    "industry": None,
+                    "trailing_pe": None,
+                    "forward_pe": None,
+                }
         return metadata
+
+    @staticmethod
+    def _finite_number(value: object) -> float | None:
+        if not isinstance(value, (int, float)):
+            return None
+        numeric_value = float(value)
+        return numeric_value if math.isfinite(numeric_value) else None
