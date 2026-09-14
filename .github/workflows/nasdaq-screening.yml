@@ -145,6 +145,6 @@ jobs:
           gzip -c data/firefinder.db > data/firefinder.db.gz
           gcloud storage cp data/firefinder.db.gz "gs://${GCS_BUCKET}/firefinder-db/${RUN_TIMESTAMP}/firefinder.db.gz"
           gcloud storage cp data/firefinder.db.gz "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db.gz"
-          gcloud storage ls "gs://${GCS_BUCKET}/sepa-screening/${RUN_TIMESTAMP}/"
+          gcloud storage ls "gs://${GCS_BUCKET}/firefinder-reports/${RUN_TIMESTAMP}/"
 # Screening output is retained in Cloud Storage for later analysis.
 
