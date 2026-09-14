@@ -51,22 +51,12 @@ def listing_summary(analysis_directory: Path) -> str:
             latest_passed.append(observation)
 
     sector_counts = Counter(observation.get("sector") or "미분류" for observation in latest_passed)
-    industry_counts = Counter(observation.get("industry") or "미분류" for observation in latest_passed)
-
-    def format_counts(counts: Counter[str]) -> str:
-        if not counts:
-            return "없음"
-        return ", ".join(
-            f"{name}: {count}개"
-            for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-        )
-
-    return "\n".join([
-        f"최신 스크리닝 날짜: {latest_date}",
-        f"SEPA 통과 종목: {len(latest_passed)}개",
-        f"섹터별 통과 수: {format_counts(sector_counts)}",
-        f"산업군별 통과 수: {format_counts(industry_counts)}",
-    ])
+    if not sector_counts:
+        return "SEPA 통과 종목이 없습니다."
+    return "\n".join(
+        f"{sector}: {count}개"
+        for sector, count in sorted(sector_counts.items(), key=lambda item: (-item[1], item[0]))
+    )
 
 
 def main() -> None:
@@ -86,11 +76,7 @@ def main() -> None:
     message["Subject"] = "FireFinder screening analysis report"
     message["From"] = sender
     message["To"] = ", ".join(recipients)
-    message.set_content(
-        "FireFinder 스크리닝 분석 리포트입니다.\n\n"
-        f"{listing_summary(analysis_directory)}\n\n"
-        "상세 History는 첨부된 CSV 파일을 확인해 주세요."
-    )
+    message.set_content(listing_summary(analysis_directory))
     message.add_attachment(
         report_path.read_bytes(),
         maintype="text",
