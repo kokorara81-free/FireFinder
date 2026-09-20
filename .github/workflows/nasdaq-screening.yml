@@ -2,7 +2,8 @@ name: FireFinder Daily Screening and Analysis
 
 on:
   schedule:
-    - cron: "0 11 * * *"
+    # GitHub Actions cron uses UTC: 09:00 UTC = 18:00 KST.
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -126,7 +127,7 @@ jobs:
         if: steps.market_day.outputs.open == 'true'
         run: python backend/inspect_database.py --fail-on-empty
 
-      - name: Upload daily reports and compressed database
+      - name: Upload daily reports and latest compressed database
         if: steps.market_day.outputs.open == 'true'
         run: |
           test -n "${GCS_BUCKET}" || (echo "GCS_BUCKET is empty. Set it in Settings > Secrets and variables > Actions > Variables." && exit 1)
@@ -143,7 +144,6 @@ jobs:
           gcloud storage cp data/firefinder-reports.tar.gz \
             "gs://${GCS_BUCKET}/firefinder-reports/${RUN_TIMESTAMP}/firefinder-reports.tar.gz"
           gzip -c data/firefinder.db > data/firefinder.db.gz
-          gcloud storage cp data/firefinder.db.gz "gs://${GCS_BUCKET}/firefinder-db/${RUN_TIMESTAMP}/firefinder.db.gz"
           gcloud storage cp data/firefinder.db.gz "gs://${GCS_BUCKET}/firefinder-db/latest/firefinder.db.gz"
           gcloud storage ls "gs://${GCS_BUCKET}/firefinder-reports/${RUN_TIMESTAMP}/"
 # Screening output is retained in Cloud Storage for later analysis.

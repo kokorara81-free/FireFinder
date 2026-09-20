@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import {
   ArrowUpRight,
+  Activity,
   Bell,
   BookOpen,
   Bookmark,
@@ -25,11 +26,14 @@ import {
   Trash2,
 } from "lucide-react";
 
-type View = "dashboard" | "screening" | "analysis-report" | "watchlist" | "journal" | "history";
+type View = "dashboard" | "screening" | "analysis-report" | "watchlist" | "market-flow" | "journal" | "history";
 type ScreeningResult = { symbol: string; company_name?: string; sector?: string | null; industry?: string | null; score: number; max_score: number; passed: boolean; is_new_entry?: boolean; is_dropout?: boolean; sepa_streak_days?: number; screening_date?: string | null; current_price?: number | null; trailing_pe?: number | null; forward_pe?: number | null; average_50?: number | null; average_150?: number | null; average_200?: number | null; volume_ratio?: number | null; rs_score?: number | null; vcp_found?: boolean | null; conditions?: Record<string, boolean>; vcp?: Record<string, unknown>; raw_result?: Record<string, unknown> };
 type ScreeningFilter = "passed" | "new" | "dropout" | null;
 type DashboardData = { screening_date: string | null; total_symbols: number; passed_count: number; scanned_count?: number; new_entries: number; dropouts: number; important_count: number; provider?: string | null; strategy?: string | null; };
 type TrendPoint = { date: string; sectors: Record<string, number>; passed_count: number };
+type MarketFlowPoint = { date: string; passed_count: number; scanned_count: number; pass_rate: number; new_entries: number; dropouts: number; sectors: Record<string, { passed_count: number; scanned_count: number; pass_rate: number }>; industries: Record<string, { sector: string; industry: string; passed_count: number; scanned_count: number; pass_rate: number }> };
+type MarketEvent = { id: number; date: string; title: string; description: string; category: string };
+type MarketFlowData = { days: number; market_status: string; pass_rate_change: number; benchmark: { symbol: string; available: boolean; points: { date: string; close: number; normalized: number }[] }; points: MarketFlowPoint[]; sectors: string[]; industries: { sector: string; industry: string }[]; events: MarketEvent[] };
 type InterestState = "rising" | "falling" | "none";
 type WatchlistItem = { ticker: string; is_important: boolean; is_watched: boolean; memo?: string | null; score?: number | null; passed?: boolean | null };
 type Run = { id: number; screening_date: string; generated_at: string; provider: string; strategy: string; status: string };
@@ -64,6 +68,7 @@ function App() {
   const [results, setResults] = useState<ScreeningResult[]>([]);
   const [analysisRows, setAnalysisRows] = useState<AnalysisRow[]>([]);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [marketFlow, setMarketFlow] = useState<MarketFlowData | null>(null);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [query, setQuery] = useState("");
@@ -78,17 +83,19 @@ function App() {
       fetch("/api/analytics/dashboard").then(readJson<DashboardData>),
       fetch("/api/analytics/screening?passed_only=false&limit=2000").then(readJson<{ screening_date: string | null; total_count: number; passed_count: number; results: ScreeningResult[] }>),
       fetch("/api/analytics/trend?days=20").then(readJson<{ points: TrendPoint[] }>),
+      fetch("/api/analytics/market-flow?days=31").then(readJson<MarketFlowData>),
       fetch("/api/analytics/watchlist").then(readJson<{ items: WatchlistItem[] }>),
       fetch("/api/analytics/runs?limit=50").then(readJson<{ runs: Run[] }>),
       fetch("/api/analytics/analysis-report?horizon=21&passed_only=true&status=all&min_score=0").then(readJson<{ rows: AnalysisRow[] }>),
-    ]).then(([summary, screening, trendResponse, saved, runResponse, analysisResponse]) => {
+    ]).then(([summary, screening, trendResponse, marketFlowResponse, saved, runResponse, analysisResponse]) => {
       if (summary.status === "fulfilled") setDashboard(summary.value);
       if (screening.status === "fulfilled") setResults(screening.value.results.map((result) => ({ ...result, screening_date: screening.value.screening_date })));
       if (trendResponse.status === "fulfilled") setTrend(trendResponse.value.points);
+      if (marketFlowResponse.status === "fulfilled") setMarketFlow(marketFlowResponse.value);
       if (saved.status === "fulfilled") setWatchlist(saved.value.items);
       if (runResponse.status === "fulfilled") setRuns(runResponse.value.runs);
       if (analysisResponse.status === "fulfilled") setAnalysisRows(analysisResponse.value.rows);
-      if ([summary, screening, trendResponse, saved, runResponse, analysisResponse].some((result) => result.status === "rejected")) setError("일부 분석 데이터만 불러왔습니다.");
+      if ([summary, screening, trendResponse, marketFlowResponse, saved, runResponse, analysisResponse].some((result) => result.status === "rejected")) setError("일부 분석 데이터만 불러왔습니다.");
     });
   }, []);
 
@@ -99,53 +106,6 @@ function App() {
 
   useEffect(() => { localStorage.setItem("firefinder.screening.columnOrder", JSON.stringify(columnOrder)); }, [columnOrder]);
   useEffect(() => { localStorage.setItem("firefinder.screening.visibleColumns", JSON.stringify(visibleColumns)); }, [visibleColumns]);
-  useEffect(() => {
-    if (view !== "analysis-report") return;
-    let decorating = false;
-    const analysisBySymbol = new Map(analysisRows.map((item) => [item.symbol, item]));
-    const decorateAnalysisTable = () => {
-      if (decorating) return;
-      const table = document.querySelector(".analysis-symbol-table");
-      if (!table) return;
-      decorating = true;
-      table.querySelectorAll("tbody tr").forEach((row) => {
-        const cells = row.querySelectorAll("td");
-        const ticker = cells[0]?.textContent?.trim() ?? "";
-        const analysisRow = analysisBySymbol.get(ticker);
-        if (!analysisRow || cells.length < 8) return;
-        const state = analysisRow.interest_state ?? (analysisRow.is_watchlisted ? "rising" : "none");
-        const interestCell = cells[3] as HTMLElement;
-        const star = state === "none" ? "☆" : "★";
-        if (interestCell.textContent !== star) interestCell.textContent = star;
-        if (interestCell.className !== `interest-cell ${state}`) interestCell.className = `interest-cell ${state}`;
-        for (let index = 4; index <= 7; index += 1) {
-          const cell = cells[index] as HTMLElement;
-          const value = Number.parseFloat(cell.textContent ?? "");
-          const positive = value > 0;
-          const negative = value < 0;
-          if (cell.classList.contains("return-positive") !== positive) cell.classList.toggle("return-positive", positive);
-          if (cell.classList.contains("return-negative") !== negative) cell.classList.toggle("return-negative", negative);
-        }
-      });
-      decorating = false;
-    };
-    decorateAnalysisTable();
-    const table = document.querySelector(".analysis-symbol-table");
-    if (!table) return;
-    const observer = new MutationObserver(decorateAnalysisTable);
-    observer.observe(table, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [analysisRows, view]);
-  useEffect(() => {
-    document.querySelectorAll<HTMLButtonElement>(".save-button").forEach((button) => {
-      const label = button.getAttribute("aria-label") ?? "";
-      const item = watchlist.find((entry) => label.startsWith(entry.ticker));
-      const state = getInterestState(item);
-      button.classList.remove("interest-rising", "interest-falling", "interest-none");
-      button.classList.add(`interest-${state}`);
-    });
-  }, [watchlist, results]);
-
   async function toggleWatch(ticker: string) {
     const current = watchlist.find((item) => item.ticker === ticker);
     const currentState = getInterestState(current);
@@ -168,10 +128,10 @@ function App() {
       <div className="brand"><span className="brand-mark">FF</span><span className="brand-copy"><strong>FireFinder</strong><small>Analysis workspace</small></span></div>
       <nav className="nav">
         <NavItem icon={<LayoutDashboard size={18} />} label="Dashboard" number="01" active={view === "dashboard"} onClick={() => setView("dashboard")} />
-        <NavItem icon={<Search size={18} />} label="Screening" number="02" active={view === "screening"} onClick={() => setView("screening")} />
-        <NavItem icon={<LineChart size={18} />} label="Analysis report" number="03" active={view === "analysis-report"} onClick={() => setView("analysis-report")} />
-        <NavItem icon={<Bookmark size={18} />} label="Watchlist" number="04" active={view === "watchlist"} onClick={() => setView("watchlist")} />
-        <NavItem icon={<BookOpen size={18} />} label="Trade Journal" number="05" active={view === "journal"} onClick={() => setView("journal")} />
+        <NavItem icon={<Activity size={18} />} label="Market Flow" number="02" active={view === "market-flow"} onClick={() => setView("market-flow")} />
+        <NavItem icon={<Search size={18} />} label="Screening" number="03" active={view === "screening"} onClick={() => setView("screening")} />
+        <NavItem icon={<LineChart size={18} />} label="Analysis report" number="04" active={view === "analysis-report"} onClick={() => setView("analysis-report")} />
+        <NavItem icon={<Bookmark size={18} />} label="Watchlist" number="05" active={view === "watchlist"} onClick={() => setView("watchlist")} />
         <NavItem icon={<History size={18} />} label="History" number="06" active={view === "history"} onClick={() => setView("history")} />
       </nav>
       <div className="sidebar-note"><span className="live-dot" /> Data feed connected</div><div className="sidebar-footer"><span>POWERED BY HM</span><small>v0.1.0 · SEPA ENGINE</small></div>
@@ -179,12 +139,13 @@ function App() {
     </aside>
 
     <section className={`workspace ${view === "dashboard" ? "" : "subpage"}`}>
-      <header className={`page-header ${view === "dashboard" ? "" : "compact"}`}><div className="mobile-menu"><Menu size={19} /></div><div><span className="section-label">MARKET INTELLIGENCE / 0{view === "dashboard" ? "1" : view === "screening" ? "2" : view === "analysis-report" ? "3" : view === "watchlist" ? "4" : view === "journal" ? "5" : "6"}</span>{view === "dashboard" && <h1>{viewTitle(view)}</h1>}</div><div className="header-actions"><span className="last-update"><i className="live-dot" /> Updated {dateLabel}</span><button className="icon-button" aria-label="알림"><Bell size={17} /><i /></button></div></header>
+      <header className={`page-header ${view === "dashboard" ? "" : "compact"}`}><div className="mobile-menu"><Menu size={19} /></div><div><span className="section-label">MARKET INTELLIGENCE / 0{view === "dashboard" ? "1" : view === "screening" ? "2" : view === "analysis-report" ? "3" : view === "watchlist" ? "4" : view === "market-flow" ? "5" : "6"}</span>{view === "dashboard" && <h1>{viewTitle(view)}</h1>}</div><div className="header-actions"><span className="last-update"><i className="live-dot" /> Updated {dateLabel}</span><button className="icon-button" aria-label="알림"><Bell size={17} /><i /></button></div></header>
       {error && <div className="notice"><CircleAlert size={15} /> {error}</div>}
       {view === "dashboard" && <DashboardView dashboard={dashboard} results={liveResults} analysisRows={analysisRows} trend={trend} watchlist={watchlist} passedCount={passedCount} onOpenWatchlist={() => setView("watchlist")} onOpenAnalysis={() => setView("analysis-report")} onOpenScreening={(filter) => { setScreeningFilter(filter); setPassedOnly(filter === "passed"); setView("screening"); }} />}
       {view === "screening" && <ScreeningView results={searchableResults} analysisRows={analysisRows} query={query} passedOnly={passedOnly} screeningFilter={screeningFilter} setQuery={setQuery} setPassedOnly={(value) => { setPassedOnly(value); setScreeningFilter(value ? "passed" : null); }} setScreeningFilter={setScreeningFilter} watchlist={watchlist} onToggleWatch={toggleWatch} columnOrder={columnOrder} setColumnOrder={setColumnOrder} visibleColumns={visibleColumns} setVisibleColumns={setVisibleColumns} />}
-      {view === "analysis-report" && <AnalysisReportViewWithSorting />}
+      {view === "analysis-report" && <AnalysisReportViewWithSorting watchlist={watchlist} />}
       {view === "watchlist" && <WatchlistView items={watchlist} results={liveResults} onToggleWatch={toggleWatch} />}
+      {view === "market-flow" && <MarketFlowView data={marketFlow} onOpenScreening={(filter) => { setScreeningFilter(filter); setPassedOnly(filter === "passed"); setView("screening"); }} />}
       {view === "journal" && <JournalView />}
       {view === "history" && <HistoryView runs={runs} />}
     </section>
@@ -195,7 +156,7 @@ function App() {
           {error && <div className="notice"><CircleAlert size={15} /> {error}</div>}
           {view === "dashboard" && <DashboardView dashboard={dashboard} results={liveResults} analysisRows={analysisRows} trend={trend} watchlist={watchlist} passedCount={passedCount} onOpenWatchlist={() => setView("watchlist")} onOpenAnalysis={() => setView("analysis-report")} onOpenScreening={(filter) => { setScreeningFilter(filter); setPassedOnly(filter === "passed"); setView("screening"); }} />}
           {view === "screening" && <ScreeningView results={searchableResults} analysisRows={analysisRows} query={query} passedOnly={passedOnly} screeningFilter={screeningFilter} setQuery={setQuery} setPassedOnly={(value) => { setPassedOnly(value); setScreeningFilter(value ? "passed" : null); }} setScreeningFilter={setScreeningFilter} watchlist={watchlist} onToggleWatch={toggleWatch} columnOrder={columnOrder} setColumnOrder={setColumnOrder} visibleColumns={visibleColumns} setVisibleColumns={setVisibleColumns} />}
-          {view === "analysis-report" && <AnalysisReportViewWithSorting />}
+          {view === "analysis-report" && <AnalysisReportViewWithSorting watchlist={watchlist} />}
           {view === "watchlist" && <WatchlistView items={watchlist} results={liveResults} onToggleWatch={toggleWatch} />}
           {view === "history" && <HistoryView runs={runs} />}
         </section>
@@ -216,7 +177,6 @@ function getSignedTrend(value: number) {
 
 function DashboardView({ dashboard, results, analysisRows, trend, watchlist, passedCount, onOpenWatchlist, onOpenAnalysis, onOpenScreening }: { dashboard: DashboardData | null; results: ScreeningResult[]; analysisRows: AnalysisRow[]; trend: TrendPoint[]; watchlist: WatchlistItem[]; passedCount: number; onOpenWatchlist: () => void; onOpenAnalysis: () => void; onOpenScreening: (filter: Exclude<ScreeningFilter, null>) => void }) {
   const trendPoints = trend.length ? trend : fallbackTrend;
-  const maximum = 200;
   const sectors = [...new Set(trendPoints.flatMap((point) => Object.keys(point.sectors)))];
   const isSample = dashboard === null;
   const totalSymbols = isSample ? 1756 : dashboard.total_symbols;
@@ -231,9 +191,151 @@ function DashboardView({ dashboard, results, analysisRows, trend, watchlist, pas
   return <>
     <div className="welcome-row"><div><p className="welcome-kicker">Good morning, investor</p><h2>오늘의 시장 흐름을 확인하세요.</h2></div><div className="strategy-chip"><Sparkles size={14} /> {dashboard?.strategy ?? "SEPA Trend Template"} <span>v0.5</span></div></div>
     <section className="metrics" aria-label="대시보드 핵심 지표"><MetricCard label="전체 종목" value={totalSymbols} note="DB universe" tone="blue" /><MetricCard label="SEPA 통과" value={sepaPassed} note={`${passedCount ? Math.round((passedCount / Math.max(dashboard?.scanned_count || passedCount, 1)) * 100) : 0}% of scanned`} tone={passedTone} trend={passedTrend.text} trendTone={passedTrend.tone} onClick={() => onOpenScreening("passed")} /><MetricCard label="신규 진입" value={newEntries} note="since last scan" tone="mint" onClick={() => onOpenScreening("new")} /><MetricCard label="이탈" value={dropouts} note="needs attention" tone="coral" onClick={() => onOpenScreening("dropout")} /><MetricCard label="관심 종목" value={savedIdeas} note="saved ideas" tone="gold" onClick={onOpenWatchlist} /></section>
-    <section className="dashboard-grid"><article className="panel trend-panel"><PanelTitle eyebrow="SIGNAL MOMENTUM" title="SEPA 통과 섹터별 추이" action={<MoreHorizontal size={18} />} /><div className="trend-summary"><strong>{passedCount.toLocaleString()}</strong><span><TrendingUp size={14} /> 오늘 통과 종목</span></div><TrendChart points={trendPoints} sectors={sectors} maximum={maximum} /><div className="sector-legend">{sectors.map((sector, index) => <span key={sector}><i className={`legend-dot sector-${index % 6}`} />{sector}</span>)}</div><div className="panel-caption"><span><i className="legend-dot" /> Passed candidates by sector</span><span>Scale · 0 - 200</span></div></article><aside className="panel attention-panel"><PanelTitle eyebrow="YOUR SIGNALS" title="오늘의 관찰" action={<Star size={17} className="gold-icon" fill="currentColor" />} /><div className="attention-intro">스크리닝 결과에서 저장한 아이디어입니다.</div>{watchlist.length ? watchlist.slice(0, 3).map((item, index) => <SignalRow key={item.ticker} ticker={item.ticker} score={results.find((result) => result.symbol === item.ticker)?.score ? `${results.find((result) => result.symbol === item.ticker)?.score}/9` : "-"} color={index === 0 ? "green" : index === 1 ? "blue" : "gold"} />) : <div className="empty-state">등록된 관심 종목이 없습니다.</div>}<button className="text-button" onClick={onOpenWatchlist}>관심 종목 전체 보기 ({watchlist.length}) <ArrowUpRight size={14} /></button></aside></section>
+    <section className="dashboard-grid"><article className="panel trend-panel"><PanelTitle eyebrow="SIGNAL MOMENTUM" title="SEPA 통과 섹터별 추이" action={<MoreHorizontal size={18} />} /><div className="trend-summary"><strong>{passedCount.toLocaleString()}</strong><span><TrendingUp size={14} /> 오늘 통과 종목</span></div><TrendChart points={trendPoints} sectors={sectors} /><div className="sector-legend">{sectors.map((sector, index) => <span key={sector}><i className={`legend-dot sector-${index % 6}`} />{sector}</span>)}</div><div className="panel-caption"><span><i className="legend-dot" /> Passed candidates by sector</span></div></article><aside className="panel attention-panel"><PanelTitle eyebrow="YOUR SIGNALS" title="오늘의 관찰" action={<Star size={17} className="gold-icon" fill="currentColor" />} /><div className="attention-intro">스크리닝 결과에서 저장한 아이디어입니다.</div>{watchlist.length ? watchlist.slice(0, 3).map((item, index) => <SignalRow key={item.ticker} ticker={item.ticker} score={results.find((result) => result.symbol === item.ticker)?.score ? `${results.find((result) => result.symbol === item.ticker)?.score}/9` : "-"} color={index === 0 ? "green" : index === 1 ? "blue" : "gold"} />) : <div className="empty-state">등록된 관심 종목이 없습니다.</div>}<button className="text-button" onClick={onOpenWatchlist}>관심 종목 전체 보기 ({watchlist.length}) <ArrowUpRight size={14} /></button></aside></section>
     <RecentTable results={results} analysisRows={analysisRows} onOpenAnalysis={onOpenAnalysis} />
   </>;
+}
+
+function MarketFlowView({ data, onOpenScreening }: { data: MarketFlowData | null; onOpenScreening: (filter: Exclude<ScreeningFilter, null>) => void }) {
+  const [selectedSectors, setSelectedSectors] = useState<string[] | null>(null);
+  const [events, setEvents] = useState<MarketEvent[]>(data?.events ?? []);
+  useEffect(() => setEvents(data?.events ?? []), [data?.events]);
+  const sectors = data?.sectors ?? [];
+  const activeSectors = selectedSectors ?? sectors;
+  const latestPoint = data?.points[data.points.length - 1];
+  const firstPoint = data?.points[0];
+  const benchmarkValues = data?.benchmark.points.map((point) => point.normalized) ?? [];
+  const breadthValues = data?.points.map((point) => point.pass_rate) ?? [];
+  const visibleIndustries = data?.industries.filter((item) => activeSectors.includes(item.sector)).map((item) => item.industry) ?? [];
+  const industryKeys = [...new Set(visibleIndustries)].slice(0, 12);
+  const marketStatus = data?.market_status ?? "No data";
+  const statusLabel: Record<string, string> = { Improving: "개선 중", Deteriorating: "악화 중", Healthy: "건강한 시장", Neutral: "중립", "No data": "데이터 없음" };
+  const toggleSector = (sector: string) => {
+    const current = selectedSectors ?? sectors;
+    setSelectedSectors(current.includes(sector) ? current.filter((item) => item !== sector) : [...current, sector]);
+  };
+  return <>
+    <ViewIntro eyebrow="MARKET BREADTH" title="Market Flow" copy="S&P 500의 방향과 SEPA 시장 폭을 함께 보고, 시장을 이끄는 섹터와 산업군을 찾습니다." />
+    <section className="flow-summary">
+      <article className="flow-status-card"><span className="section-label">MARKET REGIME</span><strong>{statusLabel[marketStatus] ?? marketStatus}</strong><small>{data ? `최근 ${data.days}개 스크리닝 기준` : "분석 데이터 대기 중"}</small></article>
+      <MetricCard label="SEPA 통과율" value={latestPoint?.pass_rate ?? 0} note={`${latestPoint?.passed_count ?? 0} / ${latestPoint?.scanned_count ?? 0} 종목`} tone="green" trend={data ? `${data.pass_rate_change >= 0 ? "+" : ""}${data.pass_rate_change}%p` : undefined} trendTone={data?.pass_rate_change && data.pass_rate_change < 0 ? "negative" : "positive"} />
+      <MetricCard label="신규 진입" value={latestPoint?.new_entries ?? 0} note="최근 스크리닝" tone="mint" onClick={() => onOpenScreening("new")} />
+      <MetricCard label="이탈 종목" value={latestPoint?.dropouts ?? 0} note="최근 스크리닝" tone="coral" onClick={() => onOpenScreening("dropout")} />
+    </section>
+    <section className="flow-chart-grid">
+      <article className="panel flow-panel"><PanelTitle eyebrow="BENCHMARK" title="S&P 500 · 1개월" action={<span className="flow-chip">{data?.benchmark.available ? "SPY" : "조회 대기"}</span>} />{benchmarkValues.length ? <FlowChart values={benchmarkValues} labels={data?.benchmark.points.map((point) => point.date) ?? []} suffix="" events={events} /> : <div className="empty-state">SPY 데이터를 불러오지 못했습니다.</div>}<div className="flow-footnote">시작일을 100으로 환산한 상대 추이</div></article>
+      <article className="panel flow-panel"><PanelTitle eyebrow="SEPA BREADTH" title="SEPA 통과율 · 1개월" action={<span className="flow-chip">{latestPoint ? `${latestPoint.pass_rate}%` : "-"}</span>} />{breadthValues.length ? <FlowChart values={breadthValues} labels={data?.points.map((point) => point.date) ?? []} suffix="%" events={events} /> : <div className="empty-state">스크리닝 이력이 없습니다.</div>}<div className="flow-footnote">전체 스크리닝 종목 대비 통과 비율</div></article>
+    </section>
+    <MarketEventStrip events={events} />
+    <section className="panel flow-section"><div className="flow-section-header"><div><span className="section-label">SECTOR LEADERSHIP</span><h3>섹터별 통과율 추이</h3></div><div className="flow-selection-actions"><button className="filter-button" onClick={() => setSelectedSectors(null)}>전체 선택</button><button className="filter-button" onClick={() => setSelectedSectors([])}>전체 해제</button></div></div><div className="flow-checks">{sectors.map((sector) => <label key={sector} title={`${sector} 섹터 그래프 표시`}><input type="checkbox" checked={activeSectors.includes(sector)} onChange={() => toggleSector(sector)} />{sector}</label>)}</div>{data?.points.length && activeSectors.length ? <MultiFlowChart points={data.points} keys={activeSectors} events={events} getValue={(point, key) => point.sectors[key]?.pass_rate ?? 0} /> : <div className="empty-state">표시할 섹터를 선택하세요.</div>}</section>
+    <section className="panel flow-section"><div className="flow-section-header"><div><span className="section-label">INDUSTRY DETAIL</span><h3>선택 섹터의 산업군</h3></div><span className="flow-count">상위 {industryKeys.length}개 표시</span></div>{industryKeys.length ? <FlowGroupChart points={data?.points ?? []} keys={industryKeys} events={events} getValue={(point, key) => Object.values(point.industries).find((item) => item.industry === key)?.pass_rate ?? 0} suffix="%" /> : <div className="empty-state">위에서 하나 이상의 섹터를 선택하세요.</div>}<div className="flow-footnote">산업군은 최근 통과 종목 수 기준 상위 항목을 표시합니다.</div></section>
+    <section className="flow-insights"><div><strong>{firstPoint && latestPoint ? `${latestPoint.pass_rate - firstPoint.pass_rate >= 0 ? "+" : ""}${(latestPoint.pass_rate - firstPoint.pass_rate).toFixed(1)}%p` : "-"}</strong><span>1개월 시장 폭 변화</span></div><div><strong>{latestPoint?.new_entries ?? 0}</strong><span>최근 신규 리더</span></div><div><strong>{activeSectors.length}/{sectors.length}</strong><span>표시 중인 섹터</span></div></section><MarketEventEditor events={events} onEventsChange={setEvents} />
+  </>;
+}
+
+function MarketEventStrip({ events }: { events: MarketEvent[] }) {
+  return <section className="market-event-strip"><span className="section-label">MARKET EVENTS</span>{events.length ? events.map((event) => <article key={event.id}><time>{event.date}</time><div><strong>{event.title}</strong><small>{event.category}{event.description ? ` · ${event.description}` : ""}</small></div></article>) : <span className="market-event-strip-empty">등록된 시장 이벤트가 없습니다.</span>}</section>;
+}
+
+function FlowChart({ values, labels, suffix, events = [] }: { values: number[]; labels: string[]; suffix: string; events?: MarketEvent[] }) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = Math.max(max - min, 1);
+  const yFor = (value: number) => 92 - ((value - min) / spread) * 78;
+  const xFor = (index: number) => values.length === 1 ? 50 : 3 + (index / (values.length - 1)) * 94;
+  const coordinates = values.map((value, index) => `${xFor(index)},${yFor(value)}`).join(" ");
+  const latestValue = values[values.length - 1] ?? 0;
+  const latestLabel = labels[labels.length - 1] ?? "-";
+  const guideValues = [max, min + spread / 2, min];
+  const eventMarkers = events.map((event) => ({ event, index: labels.indexOf(event.date) })).filter((marker) => marker.index >= 0);
+  return <div className="flow-chart"><div className="flow-chart-value">{latestValue.toFixed(1)}{suffix}</div><div className="flow-chart-scale">{guideValues.map((value) => <span key={value}>{value.toFixed(1)}{suffix}</span>)}</div><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="시장 추이 그래프"><line x1="0" x2="100" y1="92" y2="92" /><line x1="0" x2="100" y1="53" y2="53" /><line x1="0" x2="100" y1="14" y2="14" />{eventMarkers.map(({ event, index }) => <g key={event.id}><line className="market-event-line" x1={xFor(index)} x2={xFor(index)} y1="5" y2="94" /><line className="market-event-dot" x1={xFor(index)} x2={xFor(index)} y1="7" y2="7" /><title>{event.date} · {event.title}{event.description ? ` · ${event.description}` : ""}</title></g>)}<polyline points={coordinates} /><line className="flow-latest-dot" x1={xFor(values.length - 1)} x2={xFor(values.length - 1)} y1={yFor(latestValue)} y2={yFor(latestValue)} /><title>{labels[0] ?? "-"}부터 {latestLabel}까지 추이</title></svg><div className="flow-axis"><span>{labels[0] ?? "-"}</span><span>{latestLabel}</span></div></div>;
+}
+function MultiFlowChart({ points, keys, events = [], getValue }: { points: MarketFlowPoint[]; keys: string[]; events?: MarketEvent[]; getValue: (point: MarketFlowPoint, key: string) => number }) {
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [scaleMode, setScaleMode] = useState<"absolute" | "zoom" | "manual">("zoom");
+  const [manualMin, setManualMin] = useState("0");
+  const [manualMax, setManualMax] = useState("100");
+  const values = keys.flatMap((key) => points.map((point) => getValue(point, key)));
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawSpread = Math.max(rawMax - rawMin, 1);
+  const zoomPadding = Math.max(rawSpread * 0.12, 1);
+  const requestedMin = Math.max(0, Math.min(100, Number(manualMin) || 0));
+  const requestedMax = Math.max(requestedMin + 1, Math.min(100, Number(manualMax) || 100));
+  const min = scaleMode === "zoom" ? Math.max(0, rawMin - zoomPadding) : scaleMode === "manual" ? requestedMin : 0;
+  const max = scaleMode === "zoom" ? Math.min(100, rawMax + zoomPadding) : scaleMode === "manual" ? requestedMax : Math.max(100, rawMax);
+  const spread = Math.max(max - min, 1);
+  const xFor = (index: number) => points.length === 1 ? 50 : 3 + (index / (points.length - 1)) * 94;
+  const yFor = (value: number) => {
+    const boundedValue = Math.max(min, Math.min(max, value));
+    return 94 - ((boundedValue - min) / spread) * 84;
+  };
+  const colors = ["#5574a8", "#7fa1c7", "#d4775d", "#c3a45a", "#8b7eae", "#8795a9"];
+  const hoveredValue = hoveredKey ? getValue(points[points.length - 1], hoveredKey) : null;
+  const guideValues = [max, min + spread / 2, min];
+  const eventMarkers = events.map((event) => ({ event, index: points.findIndex((point) => point.date === event.date) })).filter((marker) => marker.index >= 0);
+  return <div className="multi-flow-chart"><div className="multi-flow-chart-toolbar"><div className="multi-flow-hover-label">{hoveredKey ? <><b>{hoveredKey}</b><span>최근 {hoveredValue?.toFixed(1)}%</span></> : "선 또는 범례에 마우스를 올려보세요"}</div><div className="flow-scale-toggle" role="group" aria-label="그래프 축 범위"><button className={scaleMode === "absolute" ? "selected" : ""} onClick={() => setScaleMode("absolute")}>절대값</button><button className={scaleMode === "zoom" ? "selected" : ""} onClick={() => setScaleMode("zoom")}>변화 확대</button><button className={scaleMode === "manual" ? "selected" : ""} onClick={() => setScaleMode("manual")}>수동</button></div></div>{scaleMode === "manual" && <div className="flow-manual-range"><label>최소 <input type="number" min="0" max="99" value={manualMin} onChange={(event) => setManualMin(event.target.value)} />%</label><span>~</span><label>최대 <input type="number" min="1" max="100" value={manualMax} onChange={(event) => setManualMax(event.target.value)} />%</label></div>}<div className="multi-flow-range">표시 범위 {min.toFixed(1)}% ~ {max.toFixed(1)}%</div><div className="multi-flow-plot"><div className="multi-flow-scale">{guideValues.map((value) => <span key={value}>{value.toFixed(1)}%</span>)}</div><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="섹터별 통과율 비교 그래프"><line x1="0" x2="100" y1="94" y2="94" /><line x1="0" x2="100" y1="52" y2="52" /><line x1="0" x2="100" y1="10" y2="10" />{eventMarkers.map(({ event, index }) => <g key={event.id}><line className="market-event-line" x1={xFor(index)} x2={xFor(index)} y1="5" y2="94" /><line className="market-event-dot" x1={xFor(index)} x2={xFor(index)} y1="7" y2="7" /><title>{event.date} · {event.title}{event.description ? ` · ${event.description}` : ""}</title></g>)}{keys.map((key, index) => { const pointsString = points.map((point, pointIndex) => `${xFor(pointIndex)},${yFor(getValue(point, key))}`).join(" "); return <g key={key} onMouseEnter={() => setHoveredKey(key)} onMouseLeave={() => setHoveredKey(null)}><polyline className="trend-hit-area" points={pointsString} fill="none" stroke="transparent" strokeWidth="14" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" /><polyline className={hoveredKey && hoveredKey !== key ? "flow-line-dimmed" : ""} points={pointsString} stroke={colors[index % colors.length]} onFocus={() => setHoveredKey(key)} onBlur={() => setHoveredKey(null)} tabIndex={0} aria-label={`${key} 섹터 통과율 추이`} /></g>; })}</svg><div className="multi-flow-axis"><span>{points[0]?.date ?? "-"}</span><span>{points[points.length - 1]?.date ?? "-"}</span></div></div><div className="multi-flow-legend">{keys.map((key, index) => <span key={key} className={hoveredKey && hoveredKey !== key ? "flow-legend-dimmed" : ""} onMouseEnter={() => setHoveredKey(key)} onMouseLeave={() => setHoveredKey(null)}><i style={{ background: colors[index % colors.length] }} />{key}</span>)}</div></div>;
+}
+
+function MarketFlowSectorChart({ points, keys, events, getValue }: { points: MarketFlowPoint[]; keys: string[]; events: MarketEvent[]; getValue: (point: MarketFlowPoint, key: string) => number }) {
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [hoveredEvent, setHoveredEvent] = useState<MarketEvent | null>(null);
+  const values = keys.flatMap((key) => points.map((point) => getValue(point, key)));
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const padding = Math.max((rawMax - rawMin) * 0.12, 1);
+  const min = Math.max(0, rawMin - padding);
+  const max = Math.min(100, rawMax + padding);
+  const spread = Math.max(max - min, 1);
+  const xFor = (index: number) => points.length === 1 ? 50 : 3 + (index / (points.length - 1)) * 94;
+  const yFor = (value: number) => 94 - ((Math.max(min, Math.min(max, value)) - min) / spread) * 84;
+  const colors = ["#5574a8", "#7fa1c7", "#d4775d", "#c3a45a", "#8b7eae", "#8795a9"];
+  const eventMarkers = events.map((event) => ({ event, index: points.findIndex((point) => point.date === event.date) })).filter((marker) => marker.index >= 0);
+  const handlePlotMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    const pointIndex = Math.min(points.length - 1, Math.round(ratio * (points.length - 1)));
+    const pointerRatio = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+    const pointerValue = max - pointerRatio * spread;
+    const nearestKey = keys.reduce((best, key) => Math.abs(getValue(points[pointIndex], key) - pointerValue) < Math.abs(getValue(points[pointIndex], best) - pointerValue) ? key : best, keys[0]);
+    setHoveredKey(nearestKey);
+  };
+  return <div className="multi-flow-chart" onMouseLeave={() => { setHoveredKey(null); setHoveredEvent(null); }}><div className="multi-flow-hover-label">{hoveredEvent ? <><b>{hoveredEvent.title}</b><span>{hoveredEvent.date}{hoveredEvent.description ? ` · ${hoveredEvent.description}` : ""}</span></> : hoveredKey ? <><b>{hoveredKey}</b><span>최근 {getValue(points[points.length - 1], hoveredKey).toFixed(1)}%</span></> : "그래프 또는 이벤트 점선에 마우스를 올려보세요"}</div><div className="multi-flow-range">표시 범위 {min.toFixed(1)}% ~ {max.toFixed(1)}%</div><div className="multi-flow-plot" onMouseMove={handlePlotMove}><div className="multi-flow-scale"><span>{max.toFixed(1)}%</span><span>{(min + spread / 2).toFixed(1)}%</span><span>{min.toFixed(1)}%</span></div><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="섹터별 통과율 비교 그래프"><line x1="0" x2="100" y1="94" y2="94" /><line x1="0" x2="100" y1="52" y2="52" /><line x1="0" x2="100" y1="10" y2="10" />{eventMarkers.map(({ event, index }) => <g key={event.id} onMouseEnter={() => setHoveredEvent(event)} onMouseLeave={() => setHoveredEvent(null)}><line className="market-event-hover-line" x1={xFor(index)} x2={xFor(index)} y1="5" y2="94" /><line className="market-event-line" x1={xFor(index)} x2={xFor(index)} y1="5" y2="94" /><line className="market-event-dot" x1={xFor(index)} x2={xFor(index)} y1="7" y2="7" /></g>)}{keys.map((key, index) => { const pointsString = points.map((point, pointIndex) => `${xFor(pointIndex)},${yFor(getValue(point, key))}`).join(" "); const dimmed = hoveredKey !== null && hoveredKey !== key; return <g key={key}><polyline className="market-flow-hit-line" points={pointsString} /><polyline className={dimmed ? "flow-line-dimmed" : ""} points={pointsString} stroke={colors[index % colors.length]} /></g>; })}</svg><div className="multi-flow-axis"><span>{points[0]?.date ?? "-"}</span><span>{points[points.length - 1]?.date ?? "-"}</span></div></div><div className="multi-flow-legend">{keys.map((key, index) => <span key={key} className={hoveredKey && hoveredKey !== key ? "flow-legend-dimmed" : ""} onMouseEnter={() => setHoveredKey(key)} onMouseLeave={() => setHoveredKey(null)}><i style={{ background: colors[index % colors.length] }} />{key}</span>)}</div></div>;
+}
+
+function FlowGroupChart({ points, keys, events = [], getValue, suffix }: { points: MarketFlowPoint[]; keys: string[]; events?: MarketEvent[]; getValue: (point: MarketFlowPoint, key: string) => number; suffix: string }) {
+  const latestPoint = points[points.length - 1];
+  return <div className="flow-group-chart">{keys.map((key, index) => <div className="flow-group-row" key={key}><div className="flow-group-label"><i className={`flow-dot sector-${index % 6}`} /><span>{key}</span><b>{latestPoint ? getValue(latestPoint, key).toFixed(1) : "-"}{suffix}</b></div><div className="flow-spark"><FlowChart values={points.map((point) => getValue(point, key))} labels={points.map((point) => point.date)} suffix={suffix} events={events} /></div></div>)}</div>;
+}
+
+function MarketEventEditor({ events, onEventsChange }: { events: MarketEvent[]; onEventsChange: (events: MarketEvent[]) => void }) {
+  const [items, setItems] = useState(events);
+  const [date, setDate] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("시장 이벤트");
+  useEffect(() => setItems(events), [events]);
+  async function addEvent(event: React.FormEvent) {
+    event.preventDefault();
+    if (!date || !title.trim()) return;
+    const response = await fetch("/api/analytics/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, title, description, category }) });
+    if (!response.ok) return;
+    const created = await response.json() as MarketEvent;
+    setItems((current) => [...current, created].sort((left, right) => left.date.localeCompare(right.date)));
+    onEventsChange([...items, created].sort((left, right) => left.date.localeCompare(right.date)));
+    setDate("");
+    setTitle("");
+    setDescription("");
+  }
+  async function removeEvent(id: number) {
+    const response = await fetch(`/api/analytics/events/${id}`, { method: "DELETE" });
+    if (response.ok) {
+      const next = items.filter((item) => item.id !== id);
+      setItems(next);
+      onEventsChange(next);
+    }
+  }
+  return <section className="panel market-event-panel"><div className="flow-section-header"><div><span className="section-label">CHART ANNOTATIONS</span><h3>시장 이벤트 표시</h3></div><span className="flow-count">그래프 점선으로 표시</span></div><form className="market-event-form" onSubmit={addEvent}><label>날짜<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label>분류<select value={category} onChange={(event) => setCategory(event.target.value)}><option>시장 이벤트</option><option>금리</option><option>경제지표</option><option>실적</option><option>기타</option></select></label><label className="market-event-title">제목<input value={title} onChange={(event) => setTitle(event.target.value)} /></label><label className="market-event-description">내용<input value={description} onChange={(event) => setDescription(event.target.value)} /></label><button className="filter-button selected" type="submit">이벤트 추가</button></form>{items.length ? <div className="market-event-list">{items.map((item) => <div className="market-event-item" key={item.id}><span className="market-event-date">{item.date}</span><div><strong>{item.title}</strong><small>{item.category}{item.description ? ` · ${item.description}` : ""}</small></div><button className="market-event-delete" onClick={() => removeEvent(item.id)} aria-label={`${item.title} 이벤트 삭제`}>삭제</button></div>)}</div> : <div className="market-event-empty">등록된 이벤트가 없습니다.</div>}</section>;
 }
 
 function ScreeningView({ results, analysisRows, query, passedOnly, screeningFilter, setQuery, setPassedOnly, setScreeningFilter, watchlist, onToggleWatch, columnOrder, setColumnOrder, visibleColumns, setVisibleColumns }: { results: ScreeningResult[]; analysisRows: AnalysisRow[]; query: string; passedOnly: boolean; screeningFilter: ScreeningFilter; setQuery: (value: string) => void; setPassedOnly: (value: boolean) => void; setScreeningFilter: (value: ScreeningFilter) => void; watchlist: WatchlistItem[]; onToggleWatch: (ticker: string) => void; columnOrder: ColumnKey[]; setColumnOrder: (value: ColumnKey[]) => void; visibleColumns: ColumnKey[]; setVisibleColumns: (value: ColumnKey[]) => void }) {
@@ -286,7 +388,7 @@ function ScreeningView({ results, analysisRows, query, passedOnly, screeningFilt
     next.splice(to, 0, draggedColumn);
     setColumnOrder(next);
   }
-  return <><ViewIntro eyebrow="SCREENING LAB" title="SEPA Screening" copy="가장 최근 스크리닝 결과를 조건별로 확인하고 관심 종목을 저장하세요." /><section className="panel full-panel"><div className="screening-toolbar"><label className="search-input"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="티커 또는 종목 검색" /></label><div className="filter-group" role="group" aria-label="스크리닝 결과 필터"><button className={!passedOnly ? "selected" : ""} onClick={() => setPassedOnly(false)}>전체 항목 <span>{results.length}</span></button><button className={passedOnly ? "selected" : ""} onClick={() => setPassedOnly(true)}><Check size={14} /> 통과 항목 <span>{results.filter((result) => result.passed).length}</span></button></div><div className="filter-popover"><button className={`filter-button ${sectorFilter.length ? "selected" : ""}`} onClick={() => setSectorMenuOpen((open) => !open)} aria-expanded={sectorMenuOpen}>섹터 {sectorFilter.length ? `(${sectorFilter.length})` : ""}<ChevronDown size={14} /></button>{sectorMenuOpen && <div className="sector-menu"><strong>섹터 선택</strong>{sectors.map((sector) => <label key={sector}><input type="checkbox" checked={sectorFilter.includes(sector)} onChange={() => setSectorFilter(sectorFilter.includes(sector) ? sectorFilter.filter((item) => item !== sector) : [...sectorFilter, sector])} />{sector}</label>)}<button onClick={() => setSectorFilter([])}>전체 섹터</button></div>}</div><label className="score-filter">최소 점수<input type="number" min="0" max="9" value={minimumScore || ""} placeholder="0" onChange={(event) => setMinimumScore(Math.max(0, Number(event.target.value) || 0))} /></label><label className="select-filter">VCP<select value={vcpFilter} onChange={(event) => setVcpFilter(event.target.value)}><option value="all">전체</option><option value="found">발견</option><option value="not-found">미발견</option></select></label><button className="filter-button reset-filter" onClick={() => { setSectorFilter([]); setVcpFilter("all"); setMinimumScore(0); setQuery(""); setPassedOnly(false); }}>필터 초기화</button><div className="column-settings"><button className="filter-button" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={14} /> 열 설정 <ChevronDown size={14} /></button>{settingsOpen && <div className="column-menu"><strong>표시할 열</strong>{columnOrder.map((column) => <label key={column}><input type="checkbox" checked={visibleColumns.includes(column)} disabled={column === "symbol"} onChange={() => setVisibleColumns(visibleColumns.includes(column) ? visibleColumns.filter((item) => item !== column) : [...visibleColumns, column])} />{columnLabels[column]}</label>)}<small><GripVertical size={12} /> 열 제목을 끌어 순서를 변경하세요.</small></div>}</div></div><div className="screening-result-count">현재 조건에 맞는 종목 <strong>{visibleResults.length.toLocaleString()}</strong>개</div><div className="table-wrap"><table className="screening-table"><thead><tr><th className="sticky-col">관심</th>{displayedColumns.map((column) => <th key={column} draggable onDragStart={() => setDraggedColumn(column)} onDragOver={(event) => event.preventDefault()} onDrop={() => moveColumn(column)}><button className="table-sort-button draggable-heading" onClick={() => changeSort(column)} aria-label={`${columnLabels[column]} 정렬`}><GripVertical size={12} />{columnLabels[column]}{sortColumn === column ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button></th>)}</tr></thead><tbody>{sortedResults.map((result) => { const isExpanded = expanded === result.symbol; return <Fragment key={result.symbol}><tr className={isExpanded ? "expanded-row" : ""}><td className="sticky-col"><button className={`save-button ${watchlist.some((item) => item.ticker === result.symbol && item.is_important) ? "saved" : ""}`} onClick={() => onToggleWatch(result.symbol)} aria-label={`${result.symbol} 관심 표시`}><Star size={15} fill="currentColor" /></button></td>{displayedColumns.map((column) => <td key={column}>{renderScreeningCell(column, result, () => setExpanded(isExpanded ? null : result.symbol))}</td>)}</tr>{isExpanded && <tr className="details-row"><td colSpan={displayedColumns.length + 1}><ScreeningDetails result={result} /></td></tr>}</Fragment>})}</tbody></table>{!visibleResults.length && <div className="empty-state">조건에 맞는 스크리닝 결과가 없습니다.</div>}</div></section></>;
+  return <><ViewIntro eyebrow="SCREENING LAB" title="SEPA Screening" copy="가장 최근 스크리닝 결과를 조건별로 확인하고 관심 종목을 저장하세요." /><section className="panel full-panel"><div className="screening-toolbar"><label className="search-input"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="티커 또는 종목 검색" /></label><div className="filter-group" role="group" aria-label="스크리닝 결과 필터"><button className={!passedOnly ? "selected" : ""} onClick={() => setPassedOnly(false)}>전체 항목 <span>{results.length}</span></button><button className={passedOnly ? "selected" : ""} onClick={() => setPassedOnly(true)}><Check size={14} /> 통과 항목 <span>{results.filter((result) => result.passed).length}</span></button></div><div className="filter-popover"><button className={`filter-button ${sectorFilter.length ? "selected" : ""}`} onClick={() => setSectorMenuOpen((open) => !open)} aria-expanded={sectorMenuOpen}>섹터 {sectorFilter.length ? `(${sectorFilter.length})` : ""}<ChevronDown size={14} /></button>{sectorMenuOpen && <div className="sector-menu"><strong>섹터 선택</strong>{sectors.map((sector) => <label key={sector}><input type="checkbox" checked={sectorFilter.includes(sector)} onChange={() => setSectorFilter(sectorFilter.includes(sector) ? sectorFilter.filter((item) => item !== sector) : [...sectorFilter, sector])} />{sector}</label>)}<button onClick={() => setSectorFilter([])}>전체 섹터</button></div>}</div><label className="score-filter">최소 점수<input type="number" min="0" max="9" value={minimumScore || ""} placeholder="0" onChange={(event) => setMinimumScore(Math.max(0, Number(event.target.value) || 0))} /></label><label className="select-filter">VCP<select value={vcpFilter} onChange={(event) => setVcpFilter(event.target.value)}><option value="all">전체</option><option value="found">발견</option><option value="not-found">미발견</option></select></label><button className="filter-button reset-filter" onClick={() => { setSectorFilter([]); setVcpFilter("all"); setMinimumScore(0); setQuery(""); setPassedOnly(false); }}>필터 초기화</button><div className="column-settings"><button className="filter-button" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}><Settings2 size={14} /> 열 설정 <ChevronDown size={14} /></button>{settingsOpen && <div className="column-menu"><strong>표시할 열</strong>{columnOrder.map((column) => <label key={column}><input type="checkbox" checked={visibleColumns.includes(column)} disabled={column === "symbol"} onChange={() => setVisibleColumns(visibleColumns.includes(column) ? visibleColumns.filter((item) => item !== column) : [...visibleColumns, column])} />{columnLabels[column]}</label>)}<small><GripVertical size={12} /> 열 제목을 끌어 순서를 변경하세요.</small></div>}</div></div><div className="screening-result-count">현재 조건에 맞는 종목 <strong>{visibleResults.length.toLocaleString()}</strong>개</div><div className="table-wrap"><table className="screening-table"><thead><tr><th className="sticky-col">관심</th>{displayedColumns.map((column) => <th key={column} draggable onDragStart={() => setDraggedColumn(column)} onDragOver={(event) => event.preventDefault()} onDrop={() => moveColumn(column)}><button className="table-sort-button draggable-heading" onClick={() => changeSort(column)} aria-label={`${columnLabels[column]} 정렬`}><GripVertical size={12} />{columnLabels[column]}{sortColumn === column ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}</button></th>)}</tr></thead><tbody>{sortedResults.map((result) => { const isExpanded = expanded === result.symbol; const interestState = getInterestState(watchlist.find((item) => item.ticker === result.symbol)); return <Fragment key={result.symbol}><tr className={isExpanded ? "expanded-row" : ""}><td className="sticky-col"><button className={`save-button interest-${interestState}`} onClick={() => onToggleWatch(result.symbol)} aria-label={`${result.symbol} 관심 표시`}><InterestStar state={interestState} /></button></td>{displayedColumns.map((column) => <td key={column}>{renderScreeningCell(column, result, () => setExpanded(isExpanded ? null : result.symbol))}</td>)}</tr>{isExpanded && <tr className="details-row"><td colSpan={displayedColumns.length + 1}><ScreeningDetails result={result} /></td></tr>}</Fragment>})}</tbody></table>{!visibleResults.length && <div className="empty-state">조건에 맞는 스크리닝 결과가 없습니다.</div>}</div></section></>;
 }
 
 function ScreeningPopupHost({ results, analysisRows }: { results: ScreeningResult[]; analysisRows: AnalysisRow[] }) {
@@ -336,7 +438,7 @@ function formatVcpNumber(value: unknown, format: "price" | "percent") {
 
 function getInitialView(): View {
   const requestedView = new URLSearchParams(window.location.search).get("view");
-  return requestedView === "screening" || requestedView === "analysis-report" || requestedView === "watchlist" || requestedView === "journal" || requestedView === "history" ? requestedView : "dashboard";
+  return requestedView === "screening" || requestedView === "analysis-report" || requestedView === "watchlist" || requestedView === "market-flow" || requestedView === "journal" || requestedView === "history" ? requestedView : "dashboard";
 }
 
 function getInitialAnalysisSymbol(): string | null {
@@ -380,13 +482,17 @@ function JournalView() {
 
 function RecentTable({ results, analysisRows, onOpenAnalysis }: { results: ScreeningResult[]; analysisRows: AnalysisRow[]; onOpenAnalysis: () => void }) { const latestByTicker = [...new Map(analysisRows.map((row) => [row.symbol, row])).values()].sort((left, right) => (right.average_returns["21"] ?? Number.NEGATIVE_INFINITY) - (left.average_returns["21"] ?? Number.NEGATIVE_INFINITY)); const rows = latestByTicker.length ? latestByTicker.slice(0, 5) : results.slice(0, 5).map((result) => ({ symbol: result.symbol, sector: result.sector, industry: result.industry, score: result.score, max_score: result.max_score, screening_price: result.current_price, rs_score: result.rs_score, average_returns: { "21": null }, is_watchlisted: false } as unknown as AnalysisRow)); return <section className="panel activity-panel"><PanelTitle eyebrow="LATEST ANALYSIS" title="최근 분석 결과" action={<button className="text-button" onClick={onOpenAnalysis}>전체 기록 <ArrowUpRight size={14} /></button>} /><div className="table-wrap"><table><thead><tr><th>종목</th><th>섹터</th><th>점수</th><th>현재가</th><th>RS 강도</th><th>1개월 평균 수익률</th></tr></thead><tbody>{rows.map((row) => <tr key={row.symbol}><td><strong>{row.symbol}</strong><small>{row.industry ?? "-"}</small></td><td>{row.sector ?? "-"}</td><td><span className="table-score">{row.score ?? "-"}<em>/{row.max_score ?? "-"}</em></span></td><td>{row.screening_price == null ? "-" : `$${row.screening_price.toFixed(2)}`}</td><td><span className="rs-score">{row.rs_score?.toFixed(1) ?? "-"}</span></td><td className={row.average_returns["21"] != null && row.average_returns["21"] >= 0 ? "return-positive" : "return-negative"}>{row.average_returns["21"] == null ? "-" : `${row.average_returns["21"]}%`}</td></tr>)}</tbody></table></div></section>; }
 function PanelTitle({ eyebrow, title, action }: { eyebrow: string; title: string; action: React.ReactNode }) { return <div className="panel-header"><div><span className="section-label">{eyebrow}</span><h3>{title}</h3></div><div className="panel-action">{action}</div></div>; }
-function TrendChart({ points, sectors, maximum }: { points: TrendPoint[]; sectors: string[]; maximum: number }) {
+function TrendChart({ points, sectors }: { points: TrendPoint[]; sectors: string[] }) {
   const [hoveredSector, setHoveredSector] = useState<string | null>(null);
   const colors = ["#2f7d4a", "#3d9270", "#4d78a8", "#b28b25", "#b85c48", "#7c5a98"];
-  const xFor = (index: number) => points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-  const yFor = (value: number) => 100 - (value / maximum) * 100;
+  const largestValue = Math.max(1, ...points.flatMap((point) => Object.values(point.sectors)));
+  const maximum = Math.max(10, Math.ceil(largestValue / 25) * 25);
+  const axisValues = Array.from({ length: 5 }, (_, index) => Math.round(maximum - (maximum * index) / 4));
+  const xFor = (index: number) => points.length === 1 ? 50 : 4 + (index / (points.length - 1)) * 92;
+  const yFor = (value: number) => 96 - (Math.min(value, maximum) / maximum) * 92;
   const hoveredValue = hoveredSector ? points[points.length - 1]?.sectors[hoveredSector] ?? 0 : null;
-  return <div className="chart-area"><div className="chart-y-axis"><span>200</span><span>150</span><span>100</span><span>50</span><span>0</span></div><div className="chart-plot"><div className="grid-lines"><i /><i /><i /><i /><i /></div><div className="line-hover-label">{hoveredSector ? <><b>{hoveredSector}</b><span>최근 {hoveredValue}개 통과</span></> : "선에 마우스를 올리면 섹터가 표시됩니다."}</div><div className="line-chart-wrap"><svg className="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="섹터별 SEPA 통과 종목 수 추이">{sectors.map((sector, sectorIndex) => { const color = colors[sectorIndex % colors.length]; const coordinates = points.map((point, index) => `${xFor(index)},${yFor(point.sectors[sector] ?? 0)}`).join(" "); const isDimmed = hoveredSector !== null && hoveredSector !== sector; const markerSize = hoveredSector === sector ? 2.8 : 2.2; return <g key={sector} className={isDimmed ? "trend-line dimmed" : "trend-line"} onMouseEnter={() => setHoveredSector(sector)} onMouseLeave={() => setHoveredSector(null)}><polyline points={coordinates} fill="none" stroke={color} strokeWidth={hoveredSector === sector ? "3" : "2.2"} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />{points.map((point, index) => { const x = xFor(index); const y = yFor(point.sectors[sector] ?? 0); return <rect key={`${sector}-${point.date}`} x={x - markerSize} y={y - markerSize} width={markerSize * 2} height={markerSize * 2} rx="0.45" fill="#f7f8f4" stroke={color} strokeWidth={hoveredSector === sector ? "2" : "1.7"} vectorEffect="non-scaling-stroke" transform={`rotate(45 ${x} ${y})`}><title>{`${point.date} · ${sector}: ${point.sectors[sector] ?? 0}`}</title></rect>; })}</g>; })}</svg></div><div className="chart-x-axis"><span>{points[0]?.date ?? "20일 전"}</span><span>{points[Math.floor(points.length / 2)]?.date ?? "10일 전"}</span><span>{points[points.length - 1]?.date ?? "오늘"}</span></div></div></div>;
+  const middleDate = points.length > 2 ? points[Math.floor(points.length / 2)]?.date : null;
+  return <div className="chart-area"><div className="chart-y-axis">{axisValues.map((value) => <span key={value}>{value}</span>)}</div><div className="chart-plot"><div className="grid-lines"><i /><i /><i /><i /><i /></div><div className="line-hover-label">{hoveredSector ? <><b>{hoveredSector}</b><span>최근 {hoveredValue}개 통과</span></> : "선에 마우스를 올리면 섹터가 표시됩니다."}</div><div className="line-chart-wrap"><svg className="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="섹터별 SEPA 통과 종목 수 추이">{sectors.map((sector, sectorIndex) => { const color = colors[sectorIndex % colors.length]; const coordinates = points.map((point, index) => `${xFor(index)},${yFor(point.sectors[sector] ?? 0)}`).join(" "); const isDimmed = hoveredSector !== null && hoveredSector !== sector; const markerSize = hoveredSector === sector ? 3.4 : 2.7; return <g key={sector} className={isDimmed ? "trend-line dimmed" : "trend-line"} onMouseEnter={() => setHoveredSector(sector)} onMouseLeave={() => setHoveredSector(null)}><polyline className="trend-hit-area" points={coordinates} fill="none" stroke="transparent" strokeWidth="14" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" /><polyline className="trend-visible-line" points={coordinates} fill="none" stroke={color} strokeWidth={hoveredSector === sector ? "3.8" : "2.8"} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />{points.map((point, index) => { const x = xFor(index); const y = yFor(point.sectors[sector] ?? 0); return <g key={`${sector}-${point.date}`} className="dashboard-point" transform={`translate(${x} ${y}) scale(.25 1)`}><circle r={markerSize} fill="#f7f8f4" stroke={color} strokeWidth={hoveredSector === sector ? "2" : "1.7"} vectorEffect="non-scaling-stroke"><title>{`${point.date} · ${sector}: ${point.sectors[sector] ?? 0}`}</title></circle></g>; })}</g>; })}</svg></div><div className={`chart-x-axis ${middleDate ? "" : "two-dates"}`}><span>{points[0]?.date ?? "20일 전"}</span>{middleDate && <span>{middleDate}</span>}<span>{points[points.length - 1]?.date ?? "오늘"}</span></div></div></div>;
 }
 function SignalRow({ ticker, score, color }: { ticker: string; score: string; color: string }) { return <div className="signal-row"><span className={`signal-mark ${color}`}><Star size={13} fill="currentColor" /></span><div><strong>{ticker}</strong><small>Latest SEPA result</small></div><span className="signal-score">{score}<small>Strong</small></span></div>; }
 function MetricCard({ label, value, note, tone, trend, trendTone = "neutral", onClick }: { label: string; value: number; note: string; tone: string; trend?: string; trendTone?: "positive" | "negative" | "neutral"; onClick?: () => void }) { return <article className={`metric-card ${tone} ${onClick ? "clickable" : ""}`} onClick={onClick} onKeyDown={(event) => { if (onClick && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onClick(); } }} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined}><span className="metric-label">{label}</span><div className="metric-value">{value.toLocaleString()}{trend !== undefined && trend !== null && <em className={trendTone}>{trend}</em>}</div><small>{note}</small></article>; }
@@ -525,11 +631,13 @@ function AnalysisReportViewWithWatchlistFilter() {
   const industries = [...new Set(rows.map((row) => row.industry).filter((value): value is string => Boolean(value)))].sort();
   const filteredRows = rows.filter((row) => (!industry || row.industry === industry) && (!tickerQuery || row.symbol.toLowerCase().includes(tickerQuery.toLowerCase())));
   const symbols = [...new Map(filteredRows.map((row) => [row.symbol, row])).values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
-  const details = selectedSymbol ? rows.filter((row) => row.symbol === selectedSymbol) : [];
+  const details = selectedSymbol
+    ? [...new Map(rows.filter((row) => row.symbol === selectedSymbol).map((row) => [row.screening_date ?? `${row.symbol}-unknown`, row])).values()]
+    : [];
   return <><ViewIntro eyebrow="PERFORMANCE LAB" title="Analysis report" copy="상단 종목 목록에서 티커를 선택하면 하단에 날짜별 분석이 표시됩니다." /><section className="analysis-controls"><label>티커 검색<input value={tickerQuery} onChange={(event) => setTickerQuery(event.target.value)} placeholder="AAPL" /></label><label>섹터<select value={sector} onChange={(event) => { setSector(event.target.value); setSelectedSymbol(null); }}><option value="">전체 섹터</option>{(report?.sectors ?? []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>산업군<select value={industry} onChange={(event) => { setIndustry(event.target.value); setSelectedSymbol(null); }}><option value="">전체 산업군</option>{industries.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>평균 수익률 ≥<input type="number" value={minAvgReturn} placeholder="예: 5" onChange={(event) => { setMinAvgReturn(event.target.value); setSelectedSymbol(null); }} /></label><label className="analysis-check"><input type="checkbox" checked={watchlistOnly} onChange={(event) => { setWatchlistOnly(event.target.checked); setSelectedSymbol(null); }} /> 관심종목만</label><label className="analysis-check"><input type="checkbox" checked={passedOnly} onChange={(event) => { setPassedOnly(event.target.checked); setSelectedSymbol(null); }} /> SEPA 통과만</label></section><section className="panel full-panel analysis-symbol-panel"><div className="analysis-report-meta"><strong>스크리닝 종목 목록</strong><span>{loading ? "불러오는 중..." : `${symbols.length}개 티커`}</span></div><div className="table-wrap"><table className="analysis-symbol-table"><thead><tr><th>티커</th><th>섹터</th><th>산업군</th><th>관심목록</th><th>7일 평균</th><th>15일 평균</th><th>1개월 평균</th><th>6주 평균</th></tr></thead><tbody>{symbols.map((row) => <tr key={row.symbol} className={selectedSymbol === row.symbol ? "selected-row" : ""} onClick={() => setSelectedSymbol(row.symbol)}><td><button className="ticker-button"><strong>{row.symbol}</strong></button></td><td>{row.sector ?? "-"}</td><td>{row.industry ?? "-"}</td><td>{row.is_watchlisted ? "등록" : "-"}</td>{[7, 15, 21, 30].map((period) => <td key={period}>{row.average_returns[String(period)] == null ? "-" : `${row.average_returns[String(period)]?.toFixed(2)}%`}</td>)}</tr>)}</tbody></table>{!loading && !symbols.length && <div className="empty-state">조건에 맞는 스크리닝 종목이 없습니다.</div>}</div></section><section className="panel full-panel analysis-table-panel"><div className="analysis-report-meta"><strong>{selectedSymbol ? `${selectedSymbol} 기간별 수익률 비교` : "기간별 수익률 비교"}</strong><span>{selectedSymbol ? `${details.length}개 기록` : "상단에서 티커를 선택하세요"}</span></div>{selectedSymbol && <div className="table-wrap"><table className="analysis-table"><thead><tr><th>스크리닝일</th><th>점수</th><th>VCP</th><th>RS 강도</th><th>거래량비</th><th>진입 가격</th>{periods.map((period) => <th key={period}>{analysisHorizonLabels[period] ?? `${period}일`}</th>)}</tr></thead><tbody>{details.map((row) => <tr key={`${row.symbol}-${row.screening_date}`}><td>{row.screening_date ?? "-"}</td><td>{row.score ?? "-"}/{row.max_score ?? "-"}</td><td>{row.vcp_found == null ? "-" : row.vcp_found ? "발견" : "미발견"}</td><td>{row.rs_score == null ? "-" : row.rs_score.toFixed(1)}</td><td>{row.volume_ratio == null ? "-" : `${row.volume_ratio.toFixed(2)}x`}</td><td>{row.screening_price == null ? "-" : `$${row.screening_price.toFixed(2)}`}</td>{periods.map((period) => { const item = row.horizon_returns[String(period)]; return <td key={period} className={item?.return_percent != null && item.return_percent >= 0 ? "return-positive" : "return-negative"}>{item?.return_percent == null ? (item?.status === "pending" ? "대기" : "-") : `${item.return_percent.toFixed(2)}%`}</td>; })}</tr>)}</tbody></table></div>}</section></>;
 }
 
-function AnalysisReportViewWithSorting() {
+function AnalysisReportViewWithSorting({ watchlist }: { watchlist: WatchlistItem[] }) {
   const [passedOnly, setPassedOnly] = useState(true);
   const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [sector, setSector] = useState("");
@@ -557,12 +665,15 @@ function AnalysisReportViewWithSorting() {
   const industries = [...new Set(rows.map((row) => row.industry).filter((value): value is string => Boolean(value)))].sort();
   const filteredRows = rows.filter((row) => (!industry || row.industry === industry) && (!tickerQuery || row.symbol.toLowerCase().includes(tickerQuery.toLowerCase())));
   const symbols = [...new Map(filteredRows.map((row) => [row.symbol, row])).values()];
+  const interestStateFor = (ticker: string) => getInterestState(watchlist.find((item) => item.ticker === ticker));
   function changeSort(nextKey: typeof sortKey) { setSortDirection(sortKey === nextKey && sortDirection === "asc" ? "desc" : "asc"); setSortKey(nextKey); }
-  function sortValue(row: AnalysisRow) { if (sortKey === "watchlist") return row.is_watchlisted ? 1 : 0; if (sortKey === "trailing_pe") return row.trailing_pe ?? Number.NEGATIVE_INFINITY; if (sortKey === "forward_pe") return row.forward_pe ?? Number.NEGATIVE_INFINITY; if (sortKey.startsWith("average_returns.")) return row.average_returns[sortKey.split(".")[1]] ?? Number.NEGATIVE_INFINITY; if (sortKey === "symbol") return row.symbol; if (sortKey === "sector") return row.sector ?? ""; return row.industry ?? ""; }
+  function sortValue(row: AnalysisRow) { if (sortKey === "watchlist") return interestStateFor(row.symbol) === "none" ? 0 : 1; if (sortKey === "trailing_pe") return row.trailing_pe ?? Number.NEGATIVE_INFINITY; if (sortKey === "forward_pe") return row.forward_pe ?? Number.NEGATIVE_INFINITY; if (sortKey.startsWith("average_returns.")) return row.average_returns[sortKey.split(".")[1]] ?? Number.NEGATIVE_INFINITY; if (sortKey === "symbol") return row.symbol; if (sortKey === "sector") return row.sector ?? ""; return row.industry ?? ""; }
   symbols.sort((left, right) => { const a = sortValue(left); const b = sortValue(right); const result = typeof a === "number" && typeof b === "number" ? a - b : String(a ?? "").localeCompare(String(b ?? "")); return sortDirection === "asc" ? result : -result; });
-  const details = selectedSymbol ? rows.filter((row) => row.symbol === selectedSymbol) : [];
+  const details = selectedSymbol
+    ? [...new Map(rows.filter((row) => row.symbol === selectedSymbol).map((row) => [row.screening_date ?? `${row.symbol}-unknown`, row])).values()]
+    : [];
   const sortIndicator = (key: typeof sortKey) => sortKey === key ? (sortDirection === "asc" ? " ↑" : " ↓") : "";
-  return <><ViewIntro eyebrow="PERFORMANCE LAB" title="Analysis report" copy="상단 종목 목록을 정렬하고 하단에서 티커별 날짜 상세를 확인합니다." /><section className="analysis-controls"><label>티커 검색<input value={tickerQuery} onChange={(event) => setTickerQuery(event.target.value)} placeholder="AAPL" /></label><label>섹터<select value={sector} onChange={(event) => { setSector(event.target.value); setSelectedSymbol(null); }}><option value="">전체 섹터</option>{(report?.sectors ?? []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>산업군<select value={industry} onChange={(event) => { setIndustry(event.target.value); setSelectedSymbol(null); }}><option value="">전체 산업군</option>{industries.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>평균 수익률 ≥<input type="number" value={minAvgReturn} placeholder="예: 5" onChange={(event) => { setMinAvgReturn(event.target.value); setSelectedSymbol(null); }} /></label><label className="analysis-check"><input type="checkbox" checked={watchlistOnly} onChange={(event) => { setWatchlistOnly(event.target.checked); setSelectedSymbol(null); }} /> 관심종목만</label><label className="analysis-check"><input type="checkbox" checked={passedOnly} onChange={(event) => { setPassedOnly(event.target.checked); setSelectedSymbol(null); }} /> SEPA 통과만</label></section><section className="panel full-panel analysis-symbol-panel"><div className="analysis-report-meta"><strong>스크리닝 종목 목록</strong><span>{loading ? "불러오는 중..." : `${symbols.length}개 티커`}</span></div><div className="table-wrap"><table className="analysis-symbol-table"><thead><tr><th><button className="table-sort-button" onClick={() => changeSort("symbol")}>티커{sortIndicator("symbol")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("sector")}>섹터{sortIndicator("sector")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("industry")}>산업군{sortIndicator("industry")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("watchlist")}>관심목록{sortIndicator("watchlist")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("trailing_pe")}>Trailing P/E{sortIndicator("trailing_pe")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("forward_pe")}>Forward P/E{sortIndicator("forward_pe")}</button></th>{[7, 15, 21, 30].map((period) => <th key={period}><button className="table-sort-button" onClick={() => changeSort(`average_returns.${period}` as typeof sortKey)}>{analysisHorizonLabels[period]} 평균{sortIndicator(`average_returns.${period}` as typeof sortKey)}</button></th>)}</tr></thead><tbody>{symbols.map((row) => <tr key={row.symbol} className={selectedSymbol === row.symbol ? "selected-row" : ""} onClick={() => setSelectedSymbol(row.symbol)}><td><button className="ticker-button"><strong>{row.symbol}</strong></button></td><td>{row.sector ?? "-"}</td><td>{row.industry ?? "-"}</td><td>{row.is_watchlisted ? "등록" : "-"}</td><td>{formatMetric(row.trailing_pe)}</td><td>{formatMetric(row.forward_pe)}</td>{[7, 15, 21, 30].map((period) => <td key={period}>{row.average_returns[String(period)] == null ? "-" : `${row.average_returns[String(period)]?.toFixed(2)}%`}</td>)}</tr>)}</tbody></table>{!loading && !symbols.length && <div className="empty-state">조건에 맞는 스크리닝 종목이 없습니다.</div>}</div></section><section className="panel full-panel analysis-table-panel"><div className="analysis-report-meta"><strong>{selectedSymbol ? `${selectedSymbol} 기간별 수익률 비교` : "기간별 수익률 비교"}</strong><span>{selectedSymbol ? `${details.length}개 기록` : "상단에서 티커를 선택하세요"}</span></div>{selectedSymbol && <div className="table-wrap"><table className="analysis-table"><thead><tr><th>스크리닝일</th><th>점수</th><th>VCP</th><th>RS 강도</th><th>거래량비</th><th>진입 가격</th><th>Trailing P/E</th><th>Forward P/E</th>{periods.map((period) => <th key={period}>{analysisHorizonLabels[period] ?? `${period}일`}</th>)}</tr></thead><tbody>{details.map((row) => { const detailKey = `${row.symbol}-${row.screening_date}`; const isExpanded = expandedDetail === detailKey; return <Fragment key={detailKey}><tr><td>{row.screening_date ?? "-"}</td><td><button className="score-detail-button" onClick={() => setExpandedDetail(isExpanded ? null : detailKey)}>{row.score ?? "-"}/{row.max_score ?? "-"}</button></td><td>{row.vcp_found == null ? "-" : row.vcp_found ? "발견" : "미발견"}</td><td>{row.rs_score == null ? "-" : row.rs_score.toFixed(1)}</td><td>{row.volume_ratio == null ? "-" : `${row.volume_ratio.toFixed(2)}x`}</td><td>{row.screening_price == null ? "-" : `$${row.screening_price.toFixed(2)}`}</td><td>{formatMetric(row.trailing_pe)}</td><td>{formatMetric(row.forward_pe)}</td>{periods.map((period) => { const item = row.horizon_returns[String(period)]; return <td key={period} className={item?.return_percent != null && item.return_percent >= 0 ? "return-positive" : "return-negative"}>{item?.return_percent == null ? (item?.status === "pending" ? "대기" : "-") : `${item.return_percent.toFixed(2)}%`}</td>; })}</tr>{isExpanded && <tr className="details-row"><td colSpan={8 + periods.length}><ScreeningDetails result={{ symbol: row.symbol, company_name: row.industry ?? undefined, sector: row.sector, industry: row.industry, score: row.score ?? 0, max_score: row.max_score ?? 0, passed: row.passed, current_price: row.screening_price, trailing_pe: row.trailing_pe, forward_pe: row.forward_pe, volume_ratio: row.volume_ratio, rs_score: row.rs_score, vcp_found: row.vcp_found, conditions: row.conditions, vcp: row.vcp }} /></td></tr>}</Fragment>; })}</tbody></table></div>}</section></>;
+  return <><ViewIntro eyebrow="PERFORMANCE LAB" title="Analysis report" copy="상단 종목 목록을 정렬하고 하단에서 티커별 날짜 상세를 확인합니다." /><section className="analysis-controls"><label>티커 검색<input value={tickerQuery} onChange={(event) => setTickerQuery(event.target.value)} placeholder="AAPL" /></label><label>섹터<select value={sector} onChange={(event) => { setSector(event.target.value); setSelectedSymbol(null); }}><option value="">전체 섹터</option>{(report?.sectors ?? []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>산업군<select value={industry} onChange={(event) => { setIndustry(event.target.value); setSelectedSymbol(null); }}><option value="">전체 산업군</option>{industries.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>평균 수익률 ≥<input type="number" value={minAvgReturn} placeholder="예: 5" onChange={(event) => { setMinAvgReturn(event.target.value); setSelectedSymbol(null); }} /></label><label className="analysis-check"><input type="checkbox" checked={watchlistOnly} onChange={(event) => { setWatchlistOnly(event.target.checked); setSelectedSymbol(null); }} /> 관심종목만</label><label className="analysis-check"><input type="checkbox" checked={passedOnly} onChange={(event) => { setPassedOnly(event.target.checked); setSelectedSymbol(null); }} /> SEPA 통과만</label></section><section className="panel full-panel analysis-symbol-panel"><div className="analysis-report-meta"><strong>스크리닝 종목 목록</strong><span>{loading ? "불러오는 중..." : `${symbols.length}개 티커`}</span></div><div className="table-wrap"><table className="analysis-symbol-table"><thead><tr><th><button className="table-sort-button" onClick={() => changeSort("symbol")}>티커{sortIndicator("symbol")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("sector")}>섹터{sortIndicator("sector")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("industry")}>산업군{sortIndicator("industry")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("watchlist")}>관심목록{sortIndicator("watchlist")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("trailing_pe")}>Trailing P/E{sortIndicator("trailing_pe")}</button></th><th><button className="table-sort-button" onClick={() => changeSort("forward_pe")}>Forward P/E{sortIndicator("forward_pe")}</button></th>{[7, 15, 21, 30].map((period) => <th key={period}><button className="table-sort-button" onClick={() => changeSort(`average_returns.${period}` as typeof sortKey)}>{analysisHorizonLabels[period]} 평균{sortIndicator(`average_returns.${period}` as typeof sortKey)}</button></th>)}</tr></thead><tbody>{symbols.map((row) => { const interestState = interestStateFor(row.symbol); return <tr key={row.symbol} className={selectedSymbol === row.symbol ? "selected-row" : ""} onClick={() => setSelectedSymbol(row.symbol)}><td><button className="ticker-button"><strong>{row.symbol}</strong></button></td><td>{row.sector ?? "-"}</td><td>{row.industry ?? "-"}</td><td className={`interest-cell ${interestState}`}><InterestStar state={interestState} /></td><td>{formatMetric(row.trailing_pe)}</td><td>{formatMetric(row.forward_pe)}</td>{[7, 15, 21, 30].map((period) => <td key={period}>{row.average_returns[String(period)] == null ? "-" : `${row.average_returns[String(period)]?.toFixed(2)}%`}</td>)}</tr>; })}</tbody></table>{!loading && !symbols.length && <div className="empty-state">조건에 맞는 스크리닝 종목이 없습니다.</div>}</div></section><section className="panel full-panel analysis-table-panel"><div className="analysis-report-meta"><strong>{selectedSymbol ? `${selectedSymbol} 기간별 수익률 비교` : "기간별 수익률 비교"}</strong><span>{selectedSymbol ? `${details.length}개 기록` : "상단에서 티커를 선택하세요"}</span></div>{selectedSymbol && <div className="table-wrap"><table className="analysis-table"><thead><tr><th>스크리닝일</th><th>점수</th><th>VCP</th><th>RS 강도</th><th>거래량비</th><th>진입 가격</th><th>피벗 가격</th><th>피벗일</th><th>피벗 거리</th><th>Trailing P/E</th><th>Forward P/E</th>{periods.map((period) => <th key={period}>{analysisHorizonLabels[period] ?? `${period}일`}</th>)}</tr></thead><tbody>{details.map((row) => { const detailKey = `${row.symbol}-${row.screening_date}`; const isExpanded = expandedDetail === detailKey; return <Fragment key={detailKey}><tr><td>{row.screening_date ?? "-"}</td><td><button className="score-detail-button" onClick={() => setExpandedDetail(isExpanded ? null : detailKey)}>{row.score ?? "-"}/{row.max_score ?? "-"}</button></td><td>{row.vcp_found == null ? "-" : row.vcp_found ? "발견" : "미발견"}</td><td>{row.rs_score == null ? "-" : row.rs_score.toFixed(1)}</td><td>{row.volume_ratio == null ? "-" : `${row.volume_ratio.toFixed(2)}x`}</td><td>{row.screening_price == null ? "-" : `$${row.screening_price.toFixed(2)}`}</td><td>{formatVcpNumber(row.vcp?.pivot_price, "price")}</td><td>{typeof row.vcp?.pivot_date === "string" ? row.vcp.pivot_date : "-"}</td><td>{formatVcpNumber(row.vcp?.pivot_distance_percent, "percent")}</td><td>{formatMetric(row.trailing_pe)}</td><td>{formatMetric(row.forward_pe)}</td>{periods.map((period) => { const item = row.horizon_returns[String(period)]; return <td key={period} className={item?.return_percent != null && item.return_percent >= 0 ? "return-positive" : "return-negative"}>{item?.return_percent == null ? (item?.status === "pending" ? "대기" : "-") : `${item.return_percent.toFixed(2)}%`}</td>; })}</tr>{isExpanded && <tr className="details-row"><td colSpan={11 + periods.length}><ScreeningDetails result={{ symbol: row.symbol, company_name: row.industry ?? undefined, sector: row.sector, industry: row.industry, score: row.score ?? 0, max_score: row.max_score ?? 0, passed: row.passed, current_price: row.screening_price, trailing_pe: row.trailing_pe, forward_pe: row.forward_pe, volume_ratio: row.volume_ratio, rs_score: row.rs_score, vcp_found: row.vcp_found, conditions: row.conditions, vcp: row.vcp }} /></td></tr>}</Fragment>; })}</tbody></table></div>}</section></>;
 }
 
 function LegacyAnalysisReportViewOld2() {
@@ -587,7 +698,7 @@ function LegacyAnalysisReportViewOld2() {
 
 function AnalysisMetric({ label, value, suffix, tone }: { label: string; value: number | null | undefined; suffix: string; tone: string }) { return <article className={`metric-card ${tone}`}><span className="metric-label">{label}</span><div className="metric-value">{value == null ? "-" : `${value.toFixed(2)}${suffix}`}</div><small>완료 표본 기준</small></article>; }
 
-function viewTitle(view: View) { return { dashboard: "Dashboard", screening: "Screening", "analysis-report": "Analysis report", watchlist: "Watchlist", journal: "Trade Journal", history: "History" }[view]; }
+function viewTitle(view: View) { return { dashboard: "Dashboard", screening: "Screening", "analysis-report": "Analysis report", watchlist: "Watchlist", "market-flow": "Market Flow", journal: "Trade Journal", history: "History" }[view]; }
 async function readJson<T>(response: Response): Promise<T> { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() as Promise<T>; }
 
 export default App;

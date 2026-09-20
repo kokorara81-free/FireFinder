@@ -44,5 +44,4 @@ jobs:
             exit 1
           fi
           gcloud storage cp "${SOURCE}" "${WEEKLY_PREFIX}/firefinder.db.gz"
-          gcloud storage cp "${SOURCE}" "gs://${GCS_BUCKET}/firefinder-db/weekly/latest/firefinder.db.gz"
           gcloud storage ls "${WEEKLY_PREFIX}/"

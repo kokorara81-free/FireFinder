@@ -31,3 +31,14 @@ class TradeJournal(UserBase):
     quantity: Mapped[float] = mapped_column(Float, default=1)
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MarketEvent(UserBase):
+    __tablename__ = "market_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_date: Mapped[str] = mapped_column(String(10), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(40), default="시장 이벤트")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

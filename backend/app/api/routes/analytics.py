@@ -3,16 +3,25 @@ from datetime import date, timedelta
 from statistics import mean, median
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import ScreeningResult, ScreeningReturn, ScreeningRun, Symbol
-from app.db.user_database import get_user_db
-from app.db.user_models import SymbolAnnotation
+from app.db.user_database import get_user_db, initialize_user_database
+from app.db.user_models import MarketEvent, SymbolAnnotation
 from app.analysis.performance import PERIOD_SESSIONS
+from app.data.providers.yahoo_provider import YahooFinanceProvider
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+
+class MarketEventCreate(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=1000)
+    category: str = Field(default="시장 이벤트", max_length=40)
 
 
 @router.get("/dashboard")
@@ -185,6 +194,189 @@ def screening_trend(
         for date_key in selected_dates
     ]
     return {"days": days, "sectors": sectors, "points": points}
+
+
+@router.get("/market-flow")
+def market_flow(
+    days: int = Query(default=31, ge=10, le=63),
+    database: Session = Depends(get_db),
+    user_database: Session = Depends(get_user_db),
+):
+    recent_dates = database.scalars(
+        select(ScreeningRun.screening_date)
+        .distinct()
+        .order_by(desc(ScreeningRun.screening_date))
+        .limit(days)
+    ).all()
+    selected_dates = sorted(recent_dates)
+    if not selected_dates:
+        return {
+            "days": days,
+            "market_status": "No data",
+            "benchmark": {"symbol": "SPY", "available": False, "points": []},
+            "points": [],
+            "sectors": [],
+            "industries": [],
+            "events": _market_events(user_database),
+        }
+
+    rows = database.execute(
+        select(ScreeningRun.screening_date, ScreeningResult, Symbol)
+        .join(ScreeningResult, ScreeningResult.run_id == ScreeningRun.id)
+        .join(Symbol, Symbol.id == ScreeningResult.symbol_id)
+        .where(ScreeningRun.screening_date.in_(selected_dates))
+    ).all()
+    by_date: dict[date, list[tuple[ScreeningResult, Symbol]]] = {}
+    for screening_date, result, symbol in rows:
+        by_date.setdefault(screening_date, []).append((result, symbol))
+
+    previous_passed: set[str] = set()
+    points = []
+    sector_names: set[str] = set()
+    industry_names: set[tuple[str, str]] = set()
+    for screening_date in selected_dates:
+        date_rows = by_date.get(screening_date, [])
+        passed_tickers = {symbol.ticker for result, symbol in date_rows if result.passed}
+        sector_stats: dict[str, dict[str, int]] = {}
+        industry_stats: dict[str, dict[str, str | int]] = {}
+        for result, symbol in date_rows:
+            sector = symbol.sector or "Unknown"
+            industry = symbol.industry or "Unknown"
+            sector_names.add(sector)
+            industry_names.add((sector, industry))
+            sector_stat = sector_stats.setdefault(sector, {"passed_count": 0, "scanned_count": 0})
+            sector_stat["scanned_count"] += 1
+            if result.passed:
+                sector_stat["passed_count"] += 1
+            industry_key = f"{sector}::{industry}"
+            industry_stat = industry_stats.setdefault(
+                industry_key,
+                {"sector": sector, "industry": industry, "passed_count": 0, "scanned_count": 0},
+            )
+            industry_stat["scanned_count"] += 1
+            if result.passed:
+                industry_stat["passed_count"] += 1
+        scanned_count = len(date_rows)
+        passed_count = len(passed_tickers)
+        points.append({
+            "date": screening_date.isoformat(),
+            "passed_count": passed_count,
+            "scanned_count": scanned_count,
+            "pass_rate": round(passed_count / scanned_count * 100, 2) if scanned_count else 0,
+            "new_entries": len(passed_tickers - previous_passed),
+            "dropouts": len(previous_passed - passed_tickers),
+            "sectors": _rate_stats(sector_stats),
+            "industries": _rate_stats(industry_stats),
+        })
+        previous_passed = passed_tickers
+
+    benchmark = {"symbol": "SPY", "available": False, "points": []}
+    try:
+        benchmark_rows = YahooFinanceProvider(period="3mo").get_daily_prices_batch(["SPY"], periods=days).get("SPY", [])
+        if benchmark_rows:
+            first_close = float(benchmark_rows[0]["close"])
+            benchmark = {
+                "symbol": "SPY",
+                "available": True,
+                "points": [
+                    {
+                        "date": row["date"].isoformat(),
+                        "close": round(float(row["close"]), 2),
+                        "normalized": round(float(row["close"]) / first_close * 100, 2),
+                    }
+                    for row in benchmark_rows
+                ],
+            }
+    except (RuntimeError, ValueError, OSError):
+        pass
+
+    latest_rate = points[-1]["pass_rate"] if points else 0
+    rate_change = latest_rate - (points[-6]["pass_rate"] if len(points) >= 6 else latest_rate)
+    market_status = (
+        "Improving" if rate_change >= 5 else
+        "Deteriorating" if rate_change <= -5 else
+        "Healthy" if latest_rate >= 50 else
+        "Neutral"
+    )
+    return {
+        "days": days,
+        "market_status": market_status,
+        "pass_rate_change": round(rate_change, 2),
+        "benchmark": benchmark,
+        "points": points,
+        "sectors": sorted(sector_names),
+        "industries": [
+            {"sector": sector, "industry": industry}
+            for sector, industry in sorted(industry_names)
+        ],
+        "events": _market_events(user_database),
+    }
+
+
+def _market_events(database: Session) -> list[dict]:
+    initialize_user_database()
+    events = database.scalars(
+        select(MarketEvent).order_by(MarketEvent.event_date, MarketEvent.id)
+    ).all()
+    return [
+        {
+            "id": event.id,
+            "date": event.event_date,
+            "title": event.title,
+            "description": event.description,
+            "category": event.category,
+        }
+        for event in events
+    ]
+
+
+@router.post("/events")
+def create_market_event(
+    payload: MarketEventCreate,
+    database: Session = Depends(get_user_db),
+):
+    initialize_user_database()
+    event = MarketEvent(
+        event_date=payload.date,
+        title=payload.title.strip(),
+        description=payload.description.strip(),
+        category=payload.category.strip() or "시장 이벤트",
+    )
+    database.add(event)
+    database.commit()
+    database.refresh(event)
+    return {
+        "id": event.id,
+        "date": event.event_date,
+        "title": event.title,
+        "description": event.description,
+        "category": event.category,
+    }
+
+
+@router.delete("/events/{event_id}")
+def delete_market_event(
+    event_id: int,
+    database: Session = Depends(get_user_db),
+):
+    initialize_user_database()
+    event = database.get(MarketEvent, event_id)
+    if event is None:
+        return {"deleted": False}
+    database.delete(event)
+    database.commit()
+    return {"deleted": True}
+
+
+def _rate_stats(stats: dict[str, dict[str, str | int]]) -> dict[str, dict[str, str | int | float]]:
+    return {
+        key: {
+            **values,
+            "pass_rate": round(values["passed_count"] / values["scanned_count"] * 100, 2)
+            if values["scanned_count"] else 0,
+        }
+        for key, values in stats.items()
+    }
 
 
 @router.get("/runs")
