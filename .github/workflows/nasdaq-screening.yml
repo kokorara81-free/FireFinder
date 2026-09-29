@@ -110,6 +110,10 @@ jobs:
             --history-file data/previous-history/listing_history.json \
             --output-dir data/performance-analysis
 
+      - name: Backfill screening returns from stored prices
+        if: steps.market_day.outputs.open == 'true'
+        run: python backend/backfill_screening_returns.py
+
       - name: Verify analysis email input
         if: steps.market_day.outputs.open == 'true'
         run: |

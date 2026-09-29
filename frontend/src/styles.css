@@ -228,6 +228,49 @@ table th { font-size: 11px; }
 .market-event-item > div { display: grid; gap: 3px; min-width: 0; }
 .market-event-item strong { color: #29374e; font-size: 11px; }
 .market-event-item small { color: #8992a0; font-size: 9px; }
+.analysis-query-button { display: inline-flex; align-items: center; gap: 6px; align-self: end; min-height: 32px; padding: 0 12px; color: #f8f6f1; background: #3c587f; border: 0; border-radius: 6px; font: inherit; font-size: 10px; cursor: pointer; }
+.analysis-query-button:hover { background: #2f486b; }
+.analysis-query-button:disabled { opacity: .6; cursor: wait; }
+.analysis-query-empty { display: grid; gap: 8px; min-height: 150px; place-content: center; margin-top: 14px; text-align: center; }
+.analysis-query-empty strong { color: #38465e; font-size: 14px; }
+.analysis-query-empty span { color: #8992a0; font-size: 11px; }
+@media (max-width: 680px) { .analysis-query-button { align-self: stretch; justify-content: center; } }
+
+.company-notes { margin-top: 20px; padding: 17px; background: #f1f3f2; border: 1px solid #d9dfdb; border-radius: 8px; }
+.company-notes .detail-heading { margin-bottom: 14px; padding-bottom: 11px; border-bottom: 1px solid #dce2de; }
+.company-notes .detail-heading strong { color: #2d394d; font-size: 14px; }
+.company-notes .detail-heading span { color: #8992a0; font-size: 10px; }
+.company-notes > label { display: grid; gap: 7px; color: #5d6d63; font-size: 10px; font-weight: 700; }
+.company-notes > label + label { margin-top: 12px; }
+.company-notes textarea { width: 100%; min-height: 92px; padding: 11px 12px; color: #38465e; background: #fffdf9; border: 1px solid #cbd4ce; border-radius: 6px; font: inherit; font-size: 12px; line-height: 1.55; outline: 0; resize: vertical; }
+.company-notes textarea:focus { border-color: #6b9a78; box-shadow: 0 0 0 3px #6b9a7820; }
+.company-notes textarea::placeholder { color: #a2aaa3; }
+.company-notes-actions { display: flex; align-items: center; gap: 10px; margin-top: 13px; }
+.company-notes-actions .journal-submit { margin-top: 0; cursor: pointer; }
+.company-notes-actions .journal-submit:disabled { opacity: .6; cursor: wait; }
+.company-notes-actions > span { color: #4c8a60; font-size: 10px; }
+@media (min-width: 681px) { .company-notes > label { grid-template-columns: 112px minmax(0, 1fr); align-items: start; gap: 12px; }.company-notes textarea { min-height: 104px; } }
+@media (max-width: 680px) { .company-notes { padding: 14px; }.company-notes textarea { min-height: 86px; } }
+.watch-notes { display: grid; gap: 8px; margin-top: 13px; padding-top: 11px; border-top: 1px solid #e1e5e1; }
+.watch-notes-preview { display: grid; gap: 6px; min-height: 28px; }
+.watch-notes-preview:not(.expanded) .watch-note { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.watch-notes-preview:not(.expanded) .watch-note:first-child { -webkit-line-clamp: 4; }
+.watch-notes-preview.expanded .watch-note { display: grid; }
+.watch-notes-preview > span { color: #9aa59d; font-size: 10px; }
+.watch-note { display: grid; gap: 3px; margin: 0; color: #617267; font-size: 10px; line-height: 1.45; white-space: pre-wrap; }
+.watch-note strong { color: #395b45; font-size: 9px; text-transform: uppercase; }
+.watch-note-edit { justify-self: start; padding: 5px 8px; color: #496d55; background: #eef4ec; border: 1px solid #d0dfcf; border-radius: 5px; font-size: 9px; cursor: pointer; }
+.watch-note-edit:hover { background: #e3eee1; }
+.watch-notes-editing { gap: 10px; }
+.watch-notes-editing label { display: grid; gap: 5px; color: #607267; font-size: 9px; font-weight: 700; }
+.watch-notes-editing textarea { width: 100%; padding: 8px 9px; color: #38465e; background: #fffdf9; border: 1px solid #cbd4ce; border-radius: 5px; font: inherit; font-size: 10px; line-height: 1.45; resize: vertical; outline: 0; }
+.watch-notes-editing textarea:focus { border-color: #6b9a78; box-shadow: 0 0 0 2px #6b9a7820; }
+.watch-note-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.watch-note-save, .watch-note-cancel { padding: 6px 9px; border-radius: 5px; font-size: 9px; cursor: pointer; }
+.watch-note-save { color: #f8f6f1; background: #3c587f; border: 0; }
+.watch-note-save:disabled { opacity: .6; cursor: wait; }
+.watch-note-cancel { color: #68786d; background: transparent; border: 1px solid #cbd4ce; }
+.watch-note-error { color: #bd5b4b; font-size: 9px; }
 .market-event-delete { margin-left: auto; padding: 4px 7px; color: #bd5b4b; background: transparent; border: 1px solid #e3c5bd; border-radius: 4px; font-size: 9px; }
 .market-event-empty { margin-top: 16px; color: #8992a0; font-size: 10px; }
 .market-event-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; padding: 12px 15px; background: #f8f6f1; border: 1px solid #d9d6cf; border-radius: 9px; }

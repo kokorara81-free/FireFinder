@@ -16,6 +16,8 @@ class SymbolAnnotation(UserBase):
     is_watched: Mapped[bool] = mapped_column(Boolean, default=False)
     is_excluded: Mapped[bool] = mapped_column(Boolean, default=False)
     memo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    company_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    investment_strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

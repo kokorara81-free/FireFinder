@@ -567,6 +567,8 @@ def watchlist(
                 "is_important": annotation.is_important,
                 "is_watched": annotation.is_watched,
                 "memo": annotation.memo,
+                "company_description": annotation.company_description,
+                "investment_strategy": annotation.investment_strategy,
                 "score": latest_results.get(annotation.ticker).score if latest_results.get(annotation.ticker) else None,
                 "passed": latest_results.get(annotation.ticker).passed if latest_results.get(annotation.ticker) else None,
             }

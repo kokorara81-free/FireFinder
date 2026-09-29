@@ -16,6 +16,8 @@ class AnnotationUpdate(BaseModel):
     is_watched: bool | None = None
     is_excluded: bool | None = None
     memo: str | None = None
+    company_description: str | None = None
+    investment_strategy: str | None = None
 
 
 @router.get("/{ticker}")
@@ -25,7 +27,7 @@ def get_annotation(ticker: str, database: Session = Depends(get_user_db)):
         select(SymbolAnnotation).where(SymbolAnnotation.ticker == ticker.upper())
     )
     if annotation is None:
-        return {"ticker": ticker.upper(), "is_important": False, "is_watched": False, "is_excluded": False, "memo": None}
+        return {"ticker": ticker.upper(), "is_important": False, "is_watched": False, "is_excluded": False, "memo": None, "company_description": None, "investment_strategy": None}
     return _serialize(annotation)
 
 
@@ -67,4 +69,6 @@ def _serialize(annotation: SymbolAnnotation) -> dict:
         "is_watched": annotation.is_watched,
         "is_excluded": annotation.is_excluded,
         "memo": annotation.memo,
+        "company_description": annotation.company_description,
+        "investment_strategy": annotation.investment_strategy,
     }

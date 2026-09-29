@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import settings
@@ -15,6 +15,13 @@ UserSessionLocal = sessionmaker(bind=user_engine, autocommit=False, autoflush=Fa
 
 def initialize_user_database() -> None:
     UserBase.metadata.create_all(bind=user_engine)
+    if user_engine.dialect.name == "sqlite":
+        columns = {column["name"] for column in inspect(user_engine).get_columns("symbol_annotations")}
+        with user_engine.begin() as connection:
+            if "company_description" not in columns:
+                connection.execute(text("ALTER TABLE symbol_annotations ADD COLUMN company_description TEXT"))
+            if "investment_strategy" not in columns:
+                connection.execute(text("ALTER TABLE symbol_annotations ADD COLUMN investment_strategy TEXT"))
 
 
 def get_user_db():
