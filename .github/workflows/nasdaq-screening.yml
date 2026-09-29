@@ -2,8 +2,8 @@ name: FireFinder Daily Screening and Analysis
 
 on:
   schedule:
-    # GitHub Actions cron uses UTC: 09:00 UTC = 18:00 KST.
-    - cron: "0 9 * * *"
+    # GitHub Actions cron uses UTC: 08:19 UTC = 17:19 KST.
+    - cron: "19 8 * * *"
   workflow_dispatch:
 
 permissions:
